@@ -32,8 +32,9 @@ SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 
 def init(logger, target_directory, config_file_name, defaults_config_file_name):
     cosmo_dir = os.path.dirname(os.path.realpath(__file__))
-    shutil.copy('{0}/{1}'.format(cosmo_dir, config_file_name), target_directory)
-    shutil.copy('{0}/{1}'.format(cosmo_dir, defaults_config_file_name), target_directory)
+    shutil.copyfile('{0}/cloudify-config.yaml'.format(cosmo_dir), '{0}/{1}'.format(target_directory, config_file_name))
+    shutil.copyfile('{0}/cloudify-config.defaults.yaml'.format(cosmo_dir), '{0}/{1}'.format(target_directory,
+                                                                                            defaults_config_file_name))
 
 
 def bootstrap(logger, config, management_ip=None):
