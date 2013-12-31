@@ -55,6 +55,10 @@ def bootstrap(logger, config, management_ip=None):
     return mgmt_ip
 
 
+def teardown(logger, management_ip):
+    raise RuntimeError('NOT YET IMPLEMENTED')
+
+
 class CosmoOnOpenStackBootstrapper(object):
     """ Bootstraps Cosmo on OpenStack """
 
