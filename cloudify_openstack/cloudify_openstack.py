@@ -123,11 +123,11 @@ class CosmoOnOpenStackBootstrapper(object):
                 floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
 
         # Security group for Cosmo created instances
-        sguconf = self.config['security']['security_group_user']
+        sguconf = self.config['security']['user_security_group']
         sgu_id = self.sg_creator.create_or_ensure_exists(sguconf, sguconf['name'], 'Cosmo created machines', [])
 
         # Security group for Cosmo manager, allows created instances -> manager communication
-        sgmconf = self.config['security']['security_group_manager']
+        sgmconf = self.config['security']['manager_security_group']
         sg_rules = [{'port': p, 'group_id': sgu_id} for p in INTERNAL_PORTS] + \
                    [{'port': p, 'cidr': sgmconf['cidr']} for p in EXTERNAL_PORTS]
         sgm_id = self.sg_creator.create_or_ensure_exists(sgmconf, sgmconf['name'], 'Cosmo Manager', sg_rules)

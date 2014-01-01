@@ -44,10 +44,10 @@ security:
             #private_key_filepath: [PRIVATE-KEY-PATH]
         auto_generated:
             private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
-    security_group_user:
+    user_security_group:
         externally_provisioned: false
         name: cloudify-sg-user
-    security_group_manager:
+    manager_security_group:
         externally_provisioned: false
         name: cloudify-sg-manager
         cidr: 0.0.0.0/0
