@@ -4,9 +4,9 @@ cloudify:
     install_logstash: false
 
 keystone:
-    #username: [UUU]
-    #password: [PPP]
-    #tenant_name: [TTT]
+    #username: Enter-Openstack-Username-Here
+    #password: Enter-Openstack-Password-Here
+    #tenant_name: Enter-Openstack-Tenant-Name-Here
     auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
 
 networks:
@@ -54,7 +54,7 @@ security:
 
 management_server:
     region: region-b.geo-1
-    #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation
+    #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
     user_on_management: ubuntu
     userhome_on_management: /home/ubuntu
     instance:

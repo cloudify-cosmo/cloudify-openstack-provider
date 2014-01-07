@@ -1,4 +1,4 @@
 keystone:
-    username: [UUU]
-    password: [PPP]
-    tenant_name: [TTT]
+    username: Enter-Openstack-Username-Here
+    password: Enter-Openstack-Password-Here
+    tenant_name: Enter-Openstack-Tenant-Name-Here
