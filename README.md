@@ -6,14 +6,25 @@ This Python project contains the code and configurations needed to bootstrap the
 
 ##Mandatory Configurations
 In order to boostrap Cloudify manager on OpenStack you must edit the cloudify-config.yaml file and update the following propeties:
-*username: The Openstack username you want to use vs. keystone authentication service
 
-*password: The Openstack password you want to use vs. keystone authentication service
+* username: The Openstack username you want to use vs. keystone authentication service
 
-*tenant_name: The Openstack tenant name to which you want to use now.
+* password: The Openstack password you want to use vs. keystone authentication service
+
+* tenant_name: The Openstack tenant name to which you want to use now.
 
 ##Cloudiofy OpenStack Configuration
-The following configuration options are available
+
+The following configuration options are available in the cloudify-config.defaults.yaml file. You can edit this file if you need to change any of these defaults:
+
+* Keystone configuration
+
+  * auth_url: The URL to Keystone authentication service
+
+* Networking configuration
+* Security Configuration
+* Compute Configuration
+
 
 
 
