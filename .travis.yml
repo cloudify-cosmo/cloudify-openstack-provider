@@ -11,4 +11,5 @@ install:
 script:
 
     # command to run tests
+    flake8 .
     - echo "No tests for now! Hooray!"

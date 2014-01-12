@@ -27,7 +27,8 @@ setup(
     packages=['cloudify_openstack'],
     license='LICENSE',
     description='the cloudify openstack extension',
-    package_data={'cloudify_openstack': ['cloudify-config.yaml', 'cloudify-config.defaults.yaml']},
+    package_data={'cloudify_openstack': ['cloudify-config.yaml',
+                                         'cloudify-config.defaults.yaml']},
     install_requires=[
         "python-novaclient",
         "python-keystoneclient",
