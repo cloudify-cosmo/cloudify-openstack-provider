@@ -5,7 +5,7 @@ Cloudify 3.0 openstack CLI package
 This Python project contains the code and configurations needed to bootstrap the Cloudify management netwrok &amp; manager VM on Openstack 
 
 ##Requirements
-The python-dev package is required (as it installs the Crypto library used by Paramiko):
+The python-dev package is required (as it is used to compile the Crypto library used by Paramiko):
 `apt-get install python-dev # or the equivalent *nix version of this command`
 
 ##Mandatory Configurations
