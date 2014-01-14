@@ -9,8 +9,8 @@ keystone:
     #tenant_name: Enter-Openstack-Tenant-Name-Here
     auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
 
-networks:
-    neutron_enabled_region: true
+networking:
+    neutron_supported_region: true
     neutron_url: https://region-b.geo-1.network.hpcloudsvc.com
     int_network:
         externally_provisioned: false
@@ -26,38 +26,38 @@ networks:
     router:
         externally_provisioned: false
         name: cloudify-router
-
-security:
-    management_keypair:
+    agents_security_group:
+            externally_provisioned: false
+            name: cloudify-sg-agents
+    management_security_group:
         externally_provisioned: false
-        name: cloudify-manager-kp
-        #provided:
-            #public_key_filepath: [PUBLIC-KEY-PATH]
-            #private_key_filepath: [PRIVATE-KEY-PATH]
-        auto_generated:
-            private_key_target_path: ~/.ssh/cloudify-manager-kp.pem
-    agents_keypair:
-        externally_provisioned: false
-        name: cloudify-agents-kp
-        #provided:
-            #public_key_filepath: [PUBLIC-KEY-PATH]
-            #private_key_filepath: [PRIVATE-KEY-PATH]
-        auto_generated:
-            private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
-    user_security_group:
-        externally_provisioned: false
-        name: cloudify-sg-user
-    manager_security_group:
-        externally_provisioned: false
-        name: cloudify-sg-manager
+        name: cloudify-sg-management
         cidr: 0.0.0.0/0
 
-management_server:
+compute:
     region: region-b.geo-1
-    #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
-    user_on_management: ubuntu
-    userhome_on_management: /home/ubuntu
-    instance:
-        name: cloudify-management-server
-        image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
-        flavor: 102
+    management_server:
+        #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
+        user_on_management: ubuntu
+        userhome_on_management: /home/ubuntu
+        instance:
+            name: cloudify-management-server
+            image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
+            flavor: 102
+        management_keypair:
+            externally_provisioned: false
+            name: cloudify-management-kp
+            #provided:
+                #public_key_filepath: [PUBLIC-KEY-PATH]
+                #private_key_filepath: [PRIVATE-KEY-PATH]
+            auto_generated:
+                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+    agent_servers:
+        agents_keypair:
+            externally_provisioned: false
+            name: cloudify-agents-kp
+            #provided:
+                #public_key_filepath: [PUBLIC-KEY-PATH]
+                #private_key_filepath: [PRIVATE-KEY-PATH]
+            auto_generated:
+                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem

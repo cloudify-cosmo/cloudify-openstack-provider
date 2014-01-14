@@ -63,7 +63,7 @@ def bootstrap(logger, config, management_ip=None):
     floating_ip_creator = OpenStackFloatingIpCreator(logger, connector)
     keypair_creator = OpenStackKeypairCreator(logger, connector)
     server_creator = OpenStackServerCreator(logger, connector)
-    if config['networks']['neutron_enabled_region']:
+    if config['networking']['neutron_supported_region']:
         sg_creator = OpenStackNeutronSecurityGroupCreator(logger, connector)
     else:
         sg_creator = OpenStackNovaSecurityGroupCreator(logger, connector)
@@ -101,30 +101,31 @@ class CosmoOnOpenStackBootstrapper(object):
         return mgmt_ip
 
     def _create_topology(self):
-        insconf = self.config['management_server']['instance']
+        compute_config = self.config['compute']
+        insconf = compute_config['management_server']['instance']
 
-        is_neutron_enabled_region =\
-            self.config['networks']['neutron_enabled_region']
-        if is_neutron_enabled_region:
-            nconf = self.config['networks']['int_network']
+        is_neutron_supported_region =\
+            self.config['networking']['neutron_supported_region']
+        if is_neutron_supported_region:
+            nconf = self.config['networking']['int_network']
             net_id = self.network_creator.create_or_ensure_exists(
                 nconf,
                 nconf['name'])
 
-            sconf = self.config['networks']['subnet']
+            sconf = self.config['networking']['subnet']
             subnet_id = self.subnet_creator.create_or_ensure_exists(
                 sconf,
                 sconf['name'],
                 sconf['ip_version'],
                 sconf['cidr'], net_id)
 
-            enconf = self.config['networks']['ext_network']
+            enconf = self.config['networking']['ext_network']
             enet_id = self.network_creator.create_or_ensure_exists(
                 enconf,
                 enconf['name'],
                 ext=True)
 
-            rconf = self.config['networks']['router']
+            rconf = self.config['networking']['router']
             self.router_creator.create_or_ensure_exists(
                 rconf,
                 rconf['name'],
@@ -139,27 +140,27 @@ class CosmoOnOpenStackBootstrapper(object):
                 floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
 
         # Security group for Cosmo created instances
-        sguconf = self.config['security']['user_security_group']
-        sgu_id = self.sg_creator.create_or_ensure_exists(
-            sguconf,
-            sguconf['name'],
+        asgconf = self.config['networking']['agents_security_group']
+        asg_id = self.sg_creator.create_or_ensure_exists(
+            asgconf,
+            asgconf['name'],
             'Cosmo created machines',
             [])
 
         # Security group for Cosmo manager, allows created
         # instances -> manager communication
-        sgmconf = self.config['security']['manager_security_group']
+        msgconf = self.config['networking']['management_security_group']
         sg_rules = \
-            [{'port': p, 'group_id': sgu_id} for p in INTERNAL_PORTS] + \
-            [{'port': p, 'cidr': sgmconf['cidr']} for p in EXTERNAL_PORTS]
-        sgm_id = self.sg_creator.create_or_ensure_exists(
-            sgmconf,
-            sgmconf['name'],
+            [{'port': p, 'group_id': asg_id} for p in INTERNAL_PORTS] + \
+            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_PORTS]
+        msg_id = self.sg_creator.create_or_ensure_exists(
+            msgconf,
+            msgconf['name'],
             'Cosmo Manager',
             sg_rules)
 
         # Keypairs setup
-        mgr_kpconf = self.config['security']['management_keypair']
+        mgr_kpconf = compute_config['management_server']['management_keypair']
         self.keypair_creator.create_or_ensure_exists(
             mgr_kpconf,
             mgr_kpconf['name'],
@@ -170,7 +171,7 @@ class CosmoOnOpenStackBootstrapper(object):
             mgr_kpconf['provided']['public_key_filepath'] if
             'provided' in mgr_kpconf else None
         )
-        agents_kpconf = self.config['security']['agents_keypair']
+        agents_kpconf = compute_config['agent_servers']['agents_keypair']
         self.keypair_creator.create_or_ensure_exists(
             agents_kpconf,
             agents_kpconf['name'],
@@ -187,10 +188,10 @@ class CosmoOnOpenStackBootstrapper(object):
             insconf['name'],
             {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
             mgr_kpconf['name'],
-            sgm_id if is_neutron_enabled_region else sgmconf['name'],
+            msg_id if is_neutron_supported_region else msgconf['name'],
         )
 
-        if is_neutron_enabled_region:
+        if is_neutron_supported_region:
             self.logger.info('Attaching IP {0} to the instance'
                              .format(floating_ip))
             self.server_creator.add_floating_ip(server_id, floating_ip)
@@ -208,13 +209,14 @@ class CosmoOnOpenStackBootstrapper(object):
     def _bootstrap_manager(self, mgmt_ip):
         self.logger.info('Initializing manager on the machine at {0}'
             .format(mgmt_ip))
-        management_server_config = self.config['management_server']
+        compute_config = self.config['compute']
         cosmo_config = self.config['cloudify']
+        management_server_config = compute_config['management_server']
 
         ssh = self._create_ssh_channel_with_mgmt(
             mgmt_ip,
             self._get_private_key_path_from_keypair_config(
-                self.config['security']['management_keypair']),
+                management_server_config['management_keypair']),
             management_server_config['user_on_management'])
         try:
             self._copy_files_to_manager(
@@ -222,7 +224,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 management_server_config['userhome_on_management'],
                 self.config['keystone'],
                 self._get_private_key_path_from_keypair_config(
-                    self.config['security']['agents_keypair']))
+                    compute_config['agent_servers']['agents_keypair']))
 
             self.logger.debug('Installing required packages on manager')
             self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
@@ -596,7 +598,7 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
         self._fail_on_missing_required_parameters(
             server_config,
             ('name', 'flavor', 'image'),
-            'management_server.instance')
+            'compute.management_server.instance')
 
         # First parameter is 'self', skipping
         params_names = inspect.getargspec(
@@ -610,7 +612,7 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
             if k not in params:
                 raise ValueError("Parameter with name '{0}' must not be passed"
                                  " to openstack provisioner (under "
-                                 "management_server.instance)".format(k))
+                                 "compute.management_server.instance)".format(k))
 
         for k in params:
             if k in server_config:
@@ -669,10 +671,10 @@ class OpenStackConnector(object):
         self.keystone_client = keystone_client.Client(
             **self.config['keystone'])
 
-        if self.config['networks']['neutron_enabled_region']:
+        if self.config['networking']['neutron_supported_region']:
             self.neutron_client = \
                 neutron_client.Client('2.0',
-                                      endpoint_url=config['networks']
+                                      endpoint_url=config['networking']
                                                          ['neutron_url'],
                                       token=self.keystone_client.auth_token)
             self.neutron_client.format = 'json'
@@ -685,7 +687,7 @@ class OpenStackConnector(object):
             kconf['password'],
             kconf['tenant_name'],
             kconf['auth_url'],
-            region_name=self.config['management_server']['region'],
+            region_name=self.config['compute']['region'],
             http_log_debug=False
         )
 
