@@ -26,7 +26,7 @@ setup(
     author_email='ran@gigaspaces.com',
     packages=['cloudify_openstack'],
     license='LICENSE',
-    description='the cloudify openstack extension',
+    description='the cloudify openstack provider',
     package_data={'cloudify_openstack': ['cloudify-config.yaml',
                                          'cloudify-config.defaults.yaml']},
     install_requires=[
