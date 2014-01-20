@@ -134,8 +134,8 @@ class CosmoOnOpenStackBootstrapper(object):
 
             insconf['nics'] = [{'net-id': net_id}]
 
-            if 'floating_ip' in insconf:
-                floating_ip = insconf['floating_ip']
+            if 'floating_ip' in compute_config['management_server']:
+                floating_ip = compute_config['management_server']['floating_ip']
             else:
                 floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
 
