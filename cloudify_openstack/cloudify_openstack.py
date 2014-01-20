@@ -39,7 +39,7 @@ EP_FLAG = 'externally_provisioned'
 EXTERNAL_PORTS = (22, 8100)  # SSH, REST service
 INTERNAL_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 
-SSH_CONNECT_RETRIES = 5
+SSH_CONNECT_RETRIES = 12
 SSH_CONNECT_SLEEP = 5
 
 SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
@@ -299,6 +299,9 @@ class CosmoOnOpenStackBootstrapper(object):
                             look_for_keys=False)
                 return ssh
             except socket.error:
+                self.logger.debug(
+                    "SSH connection to {0} failed. Waiting {1} seconds "
+                    "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
                 time.sleep(SSH_CONNECT_SLEEP)
         raise RuntimeError('Failed to ssh connect to management server')
 
@@ -641,6 +644,31 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
         return server.id
 
     def add_floating_ip(self, server_id, ip):
+
+        # Extra: detach floating ip from existng server
+        while True:
+            ls = self.nova_client.floating_ips.findall(ip=ip)
+            if len(ls) == 0:
+                raise OpenStackLogicError(
+                    "Floating IP {0} does not exist so it can "
+                    "not be attached to server {1}".format(ip, server_id))
+            if len(ls) > 1:
+                raise OpenStackLogicError(
+                    "Floating IP {0} is attached to "
+                    "{1} instances".format(ip, len(ls)))
+
+            if not ls[0].instance_id:
+                self.create_or_ensure_logger.debug(
+                    "Floating IP {0} is not attached to any instance. "
+                    "Continuing.".format(ip))
+                break
+
+            self.create_or_ensure_logger.debug(
+                "Floating IP {0} is attached "
+                "to instance {1}. Detaching.".format(ip, ls[0].instance_id))
+            self.nova_client.servers.remove_floating_ip(ls[0].instance_id, ip)
+            time.sleep(1)
+
         server = self.nova_client.servers.get(server_id)
         server.add_floating_ip(ip)
 
