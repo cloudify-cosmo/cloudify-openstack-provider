@@ -1,12 +1,7 @@
-cloudify:
-    cloudify_branch: develop
-    cloudify_version: 0.1-SNAPSHOT
-    install_logstash: false
-
 keystone:
-    #username: Enter-Openstack-Username-Here
-    #password: Enter-Openstack-Password-Here
-    #tenant_name: Enter-Openstack-Tenant-Name-Here
+    username: Enter-Openstack-Username-Here
+    password: Enter-Openstack-Password-Here
+    tenant_name: Enter-Openstack-Tenant-Name-Here
     auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
 
 networking:
@@ -61,3 +56,8 @@ compute:
                 #private_key_filepath: [PRIVATE-KEY-PATH]
             auto_generated:
                 private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
+
+cloudify:
+    cloudify_branch: develop
+    cloudify_version: 0.1-SNAPSHOT
+    install_logstash: false
