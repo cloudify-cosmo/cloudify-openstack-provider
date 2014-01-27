@@ -112,7 +112,8 @@ def _read_config(config_file_path):
         user_config = yaml.safe_load(config_file.read())
         defaults_config = yaml.safe_load(defaults_config_file.read())
 
-    merged_config = _deep_merge_dictionaries(user_config, defaults_config)
+    merged_config = _deep_merge_dictionaries(user_config, defaults_config) \
+        if user_config else defaults_config
     return merged_config
 
 
