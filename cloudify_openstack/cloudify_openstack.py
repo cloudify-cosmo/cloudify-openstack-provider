@@ -55,7 +55,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def configure(target_directory, reset_config):
+def init(target_directory, reset_config):
     if not reset_config and os.path.exists(
             '{0}/{1}'.format(target_directory, CONFIG_FILE_NAME)):
         return False
