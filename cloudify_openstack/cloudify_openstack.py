@@ -58,11 +58,11 @@ logger = logging.getLogger(__name__)
 
 def init(target_directory, reset_config):
     if not reset_config and os.path.exists(
-            '{0}/{1}'.format(target_directory, CONFIG_FILE_NAME)):
+            os.path.join(target_directory, CONFIG_FILE_NAME)):
         return False
 
     provider_dir = os.path.dirname(os.path.realpath(__file__))
-    shutil.copy('{0}/{1}'.format(provider_dir, CONFIG_FILE_NAME),
+    shutil.copy(os.path.join(provider_dir, CONFIG_FILE_NAME),
                 target_directory)
     return True
 
