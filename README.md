@@ -30,7 +30,7 @@ The following configuration options are available in the cloudify-config.default
 * Compute Configuration
 
 ##Sample Blueprint
-You may download a sample "hello world" blueprint to test and expirement with [here](https://github.com/CloudifySource/cloudify-hello-world/tree/develop/openstack)
+You may download a sample "hello world" blueprint to test and expirement with [here](https://github.com/CloudifySource/cloudify-hello-world/tree/develop/openstack).
 
 
 
