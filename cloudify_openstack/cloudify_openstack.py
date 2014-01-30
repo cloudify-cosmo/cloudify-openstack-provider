@@ -315,6 +315,7 @@ class CosmoOnOpenStackBootstrapper(object):
             self._exec_command_on_manager(ssh, 'git clone https://github.com/'
                                                'CloudifySource/cosmo-manager'
                                                '.git {0}/cosmo-manager'
+                                               ' --depth 1'
                 .format(workingdir))
             self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
                                                'git checkout {1} )'
