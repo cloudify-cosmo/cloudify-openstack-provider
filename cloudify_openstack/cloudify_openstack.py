@@ -306,7 +306,7 @@ class CosmoOnOpenStackBootstrapper(object):
             branch = cosmo_config['cloudify_branch']
             workingdir = '{0}/cosmo-work'.format(
                 management_server_config['userhome_on_management'])
-            version = cosmo_config['cloudify_version']
+            version = cosmo_config['cloudify_branch']
             configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
 
             self.logger.debug('cloning cosmo on manager')
@@ -326,11 +326,9 @@ class CosmoOnOpenStackBootstrapper(object):
                                  'bootstrap_lxc_manager.py --working_dir=' \
                                  '{0} --cosmo_version={1} ' \
                                  '--config_dir={2} ' \
-                                 '--install_openstack_provisioner' \
-                .format(workingdir, version, configdir)
-            if 'install_logstash' in cosmo_config and \
-                    cosmo_config['install_logstash']:
-                run_script_command += ' --install_logstash'
+                                 '--install_openstack_provisioner ' \
+                                 '--install_logstash' \
+                                 .format(workingdir, version, configdir)
             run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
             self._exec_command_on_manager(ssh, run_script_command)
 
