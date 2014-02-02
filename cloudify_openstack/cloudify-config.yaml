@@ -36,6 +36,7 @@ keystone:
 #        user_on_management: ubuntu
 #        userhome_on_management: /home/ubuntu
 #        instance:
+#            externally_provisioned: false
 #            name: cloudify-management-server
 #            image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
 #            flavor: 102
