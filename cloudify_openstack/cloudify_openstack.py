@@ -51,12 +51,14 @@ SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 CONFIG_FILE_NAME = 'cloudify-config.yaml'
 DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
+verbose_output = False
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def init(target_directory, reset_config):
+def init(target_directory, reset_config, is_verbose_output=False):
     if not reset_config and os.path.exists(
             os.path.join(target_directory, CONFIG_FILE_NAME)):
         return False
@@ -67,28 +69,31 @@ def init(target_directory, reset_config):
     return True
 
 
-def bootstrap(config_path=None):
+def bootstrap(config_path=None, is_verbose_output=False):
+    global verbose_output
+    verbose_output = is_verbose_output
+
     config = _read_config(config_path)
 
     connector = OpenStackConnector(config)
-    network_creator = OpenStackNetworkCreator(logger, connector)
-    subnet_creator = OpenStackSubnetCreator(logger, connector)
-    router_creator = OpenStackRouterCreator(logger, connector)
-    floating_ip_creator = OpenStackFloatingIpCreator(logger, connector)
-    keypair_creator = OpenStackKeypairCreator(logger, connector)
-    server_creator = OpenStackServerCreator(logger, connector)
+    network_creator = OpenStackNetworkCreator(connector)
+    subnet_creator = OpenStackSubnetCreator(connector)
+    router_creator = OpenStackRouterCreator(connector)
+    floating_ip_creator = OpenStackFloatingIpCreator(connector)
+    keypair_creator = OpenStackKeypairCreator(connector)
+    server_creator = OpenStackServerCreator(connector)
     if config['networking']['neutron_supported_region']:
-        sg_creator = OpenStackNeutronSecurityGroupCreator(logger, connector)
+        sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
     else:
-        sg_creator = OpenStackNovaSecurityGroupCreator(logger, connector)
+        sg_creator = OpenStackNovaSecurityGroupCreator(connector)
     bootstrapper = CosmoOnOpenStackBootstrapper(
-        logger, config, network_creator, subnet_creator, router_creator,
+        config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator)
     mgmt_ip = bootstrapper.run()
     return mgmt_ip
 
 
-def teardown(management_ip):
+def teardown(management_ip, is_verbose_output=False):
     raise RuntimeError('NOT YET IMPLEMENTED')
 
 
@@ -131,13 +136,17 @@ def _deep_merge_dictionaries(overriding_dict, overridden_dict):
     return merged_dict
 
 
+def _output(level, message):
+    if level >= logging.INFO or verbose_output:
+        print message
+
+
 class CosmoOnOpenStackBootstrapper(object):
     """ Bootstraps Cosmo on OpenStack """
 
-    def __init__(self, logger, config, network_creator, subnet_creator,
+    def __init__(self, config, network_creator, subnet_creator,
                  router_creator, sg_creator, floating_ip_creator,
                  keypair_creator, server_creator):
-        self.logger = logger
         self.config = config
         self.network_creator = network_creator
         self.subnet_creator = subnet_creator
@@ -261,8 +270,8 @@ class CosmoOnOpenStackBootstrapper(object):
         else:
             floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
 
-        self.logger.info('Attaching IP {0} to the instance'
-            .format(floating_ip))
+        _output(logging.INFO, 'Attaching IP {0} to the instance'.format(
+                floating_ip))
         self.server_creator.add_floating_ip(server_id, floating_ip)
         return floating_ip
 
@@ -273,8 +282,8 @@ class CosmoOnOpenStackBootstrapper(object):
         return expanduser(path)
 
     def _bootstrap_manager(self, mgmt_ip):
-        self.logger.info('Initializing manager on the machine at {0}'
-            .format(mgmt_ip))
+        _output(logging.INFO, 'Initializing manager on the machine at {0}'
+                .format(mgmt_ip))
         compute_config = self.config['compute']
         cosmo_config = self.config['cloudify']
         management_server_config = compute_config['management_server']
@@ -292,7 +301,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 self._get_private_key_path_from_keypair_config(
                     compute_config['agent_servers']['agents_keypair']))
 
-            self.logger.debug('Installing required packages on manager')
+            _output(logging.DEBUG, 'Installing required packages on manager')
             self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
                                                '$(cat /etc/hostname)" | '
                                                'sudo tee -a /etc/hosts')
@@ -321,7 +330,7 @@ class CosmoOnOpenStackBootstrapper(object):
             version = cosmo_config['cloudify_version']
             configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
 
-            self.logger.debug('cloning cosmo on manager')
+            _output(logging.DEBUG, 'cloning cosmo on manager')
             self._exec_command_on_manager(ssh, 'mkdir -p {0}'
                 .format(workingdir))
             self._exec_command_on_manager(ssh, 'git clone https://github.com/'
@@ -332,7 +341,8 @@ class CosmoOnOpenStackBootstrapper(object):
                                                'git checkout {1} )'
                 .format(workingdir, branch))
 
-            self.logger.debug('running the manager bootstrap script remotely')
+            _output(logging.DEBUG, 'running the manager bootstrap script '
+                                   'remotely')
             run_script_command = 'DEBIAN_FRONTEND=noninteractive python2.7 ' \
                                  '{0}/cosmo-manager/vagrant/' \
                                  'bootstrap_lxc_manager.py --working_dir=' \
@@ -346,7 +356,7 @@ class CosmoOnOpenStackBootstrapper(object):
             run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
             self._exec_command_on_manager(ssh, run_script_command)
 
-            self.logger.debug('rebuilding cosmo on manager')
+            _output(logging.DEBUG, 'rebuilding cosmo on manager')
         finally:
             ssh.close()
 
@@ -365,7 +375,7 @@ class CosmoOnOpenStackBootstrapper(object):
                             look_for_keys=False)
                 return ssh
             except socket.error:
-                self.logger.debug(
+                _output(logging.DEBUG,
                     "SSH connection to {0} failed. Waiting {1} seconds "
                     "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
                 time.sleep(SSH_CONNECT_SLEEP)
@@ -373,7 +383,7 @@ class CosmoOnOpenStackBootstrapper(object):
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
                                keystone_config, agents_key_path):
-        self.logger.info('Uploading files to manager')
+        _output(logging.INFO, 'Uploading files to manager')
         scp = SCPClient(ssh.get_transport())
 
         tempdir = tempfile.mkdtemp()
@@ -400,7 +410,7 @@ class CosmoOnOpenStackBootstrapper(object):
         return self._exec_command_on_manager(ssh, command)
 
     def _exec_command_on_manager(self, ssh, command):
-        self.logger.info('EXEC START: {0}'.format(command))
+        _output(logging.INFO, 'EXEC START: {0}'.format(command))
         chan = ssh.get_transport().open_session()
         chan.exec_command(command)
         stdin = chan.makefile('wb', -1)
@@ -417,7 +427,7 @@ class CosmoOnOpenStackBootstrapper(object):
                                    .format(command, errors))
 
             response_lines = stdout.readlines()
-            self.logger.info('EXEC END: {0}'.format(command))
+            _output(logging.INFO, 'EXEC END: {0}'.format(command))
             return response_lines
         finally:
             stdin.close()
@@ -431,8 +441,6 @@ class OpenStackLogicError(RuntimeError):
 
 
 class CreateOrEnsureExists(object):
-    def __init__(self, logger):
-        self.create_or_ensure_logger = logger
 
     def create_or_ensure_exists(self, config, name, *args, **kw):
         # config hash is only used for 'externally_provisioned' attribute
@@ -443,7 +451,7 @@ class CreateOrEnsureExists(object):
         return getattr(self, method)(name, *args, **kw)
 
     def check_and_create(self, name, *args, **kw):
-        self.create_or_ensure_logger.info("Will create {0} '{1}'".format(
+        _output(logging.INFO, "Will create {0} '{1}'".format(
             self.__class__.WHAT, name))
         if self.list_objects_with_name(name):
             raise OpenStackLogicError("{0} '{1}' already exists".format(
@@ -451,7 +459,7 @@ class CreateOrEnsureExists(object):
         return self.create(name, *args, **kw)
 
     def ensure_exists(self, name, *args, **kw):
-        self.create_or_ensure_logger.info("Will use existing {0} '{1}'"
+        _output(logging.INFO, "Will use existing {0} '{1}'"
             .format(self.__class__.WHAT, name))
         ret = self.find_by_name(name)
         if not ret:
@@ -485,14 +493,14 @@ class CreateOrEnsureExists(object):
 
 
 class CreateOrEnsureExistsNova(CreateOrEnsureExists):
-    def __init__(self, logger, connector):
-        CreateOrEnsureExists.__init__(self, logger)
+    def __init__(self, connector):
+        CreateOrEnsureExists.__init__(self)
         self.nova_client = connector.get_nova_client()
 
 
 class CreateOrEnsureExistsNeutron(CreateOrEnsureExists):
-    def __init__(self, logger, connector):
-        CreateOrEnsureExists.__init__(self, logger)
+    def __init__(self, connector):
+        CreateOrEnsureExists.__init__(self)
         self.neutron_client = connector.get_neutron_client()
 
 
@@ -534,8 +542,7 @@ class OpenStackSubnetCreator(CreateOrEnsureExistsNeutron):
 
 
 class OpenStackFloatingIpCreator():
-    def __init__(self, logger, connector):
-        self.logger = logger
+    def __init__(self, connector):
         self.neutron_client = connector.get_neutron_client()
 
     def allocate_ip(self, external_network_id):
@@ -694,9 +701,8 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
                                "already exists"
                                .format(server_name))
 
-        self.create_or_ensure_logger.info("Asking Nova to create server. "
-                                          "Parameters: {0}"
-            .format(str(params)))
+        _output(logging.INFO, "Asking Nova to create server. Parameters: {0}"
+                .format(str(params)))
 
         configured_sgs = []
         if params['security_groups'] is not None:
@@ -724,12 +730,13 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
                     "{1} instances".format(ip, len(ls)))
 
             if not ls[0].instance_id:
-                self.create_or_ensure_logger.debug(
-                    "Floating IP {0} is not attached to any instance. "
-                    "Continuing.".format(ip))
+                _output(logging.DEBUG,
+                        "Floating IP {0} is not attached to any instance. "
+                        "Continuing.".format(ip))
                 break
 
-            self.create_or_ensure_logger.debug(
+            _output(
+                logging.DEBUG,
                 "Floating IP {0} is attached "
                 "to instance {1}. Detaching.".format(ip, ls[0].instance_id))
             self.nova_client.servers.remove_floating_ip(ls[0].instance_id, ip)
