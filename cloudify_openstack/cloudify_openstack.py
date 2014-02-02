@@ -376,8 +376,8 @@ class CosmoOnOpenStackBootstrapper(object):
                 return ssh
             except socket.error:
                 _output(logging.DEBUG,
-                    "SSH connection to {0} failed. Waiting {1} seconds "
-                    "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
+                        "SSH connection to {0} failed. Waiting {1} seconds "
+                        "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
                 time.sleep(SSH_CONNECT_SLEEP)
         raise RuntimeError('Failed to ssh connect to management server')
 
@@ -460,7 +460,7 @@ class CreateOrEnsureExists(object):
 
     def ensure_exists(self, name, *args, **kw):
         _output(logging.INFO, "Will use existing {0} '{1}'"
-            .format(self.__class__.WHAT, name))
+                .format(self.__class__.WHAT, name))
         ret = self.find_by_name(name)
         if not ret:
             raise OpenStackLogicError("{0} '{1}' was not found".format(
