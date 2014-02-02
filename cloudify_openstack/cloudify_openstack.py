@@ -147,9 +147,8 @@ class CosmoOnOpenStackBootstrapper(object):
         self.keypair_creator = keypair_creator
         self.server_creator = server_creator
 
-    def run(self, mgmt_ip=None):
-        if not mgmt_ip:
-            mgmt_ip = self._create_topology()
+    def run(self):
+        mgmt_ip = self._create_topology()
         self._bootstrap_manager(mgmt_ip)
         return mgmt_ip
 
@@ -186,12 +185,6 @@ class CosmoOnOpenStackBootstrapper(object):
                 external_gateway_info={"network_id": enet_id})
 
             insconf['nics'] = [{'net-id': net_id}]
-
-            if 'floating_ip' in compute_config['management_server']:
-                floating_ip = compute_config['management_server'][
-                    'floating_ip']
-            else:
-                floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
 
         # Security group for Cosmo created instances
         asgconf = self.config['networking']['agents_security_group']
@@ -246,13 +239,32 @@ class CosmoOnOpenStackBootstrapper(object):
         )
 
         if is_neutron_supported_region:
-            self.logger.info('Attaching IP {0} to the instance'
-                .format(floating_ip))
-            self.server_creator.add_floating_ip(server_id, floating_ip)
-            return floating_ip
+            if not insconf[EP_FLAG]:  # new server
+                return self._attach_floating_ip(
+                    compute_config['management_server'], enet_id, server_id)
+            else:  # existing server
+                ips = self.server_creator.get_server_ips_in_network(
+                    server_id, nconf['name'])
+                if len(ips) > 0:
+                    return ips[1]  # the floating ip
+                else:  # there's no floating ip, attaching it.
+                    return self._attach_floating_ip(
+                        compute_config['management_server'], enet_id,
+                        server_id)
         else:
             return self.server_creator.get_server_ips_in_network(
                 server_id, 'private')[1]
+
+    def _attach_floating_ip(self, mgmt_server_conf, enet_id, server_id):
+        if 'floating_ip' in mgmt_server_conf:
+            floating_ip = mgmt_server_conf['floating_ip']
+        else:
+            floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
+
+        self.logger.info('Attaching IP {0} to the instance'
+            .format(floating_ip))
+        self.server_creator.add_floating_ip(server_id, floating_ip)
+        return floating_ip
 
     def _get_private_key_path_from_keypair_config(self, keypair_config):
         path = keypair_config['provided']['private_key_filepath'] if \
@@ -424,8 +436,7 @@ class CreateOrEnsureExists(object):
 
     def create_or_ensure_exists(self, config, name, *args, **kw):
         # config hash is only used for 'externally_provisioned' attribute
-        if 'externally_provisioned' in config and \
-                config['externally_provisioned']:
+        if EP_FLAG in config and config[EP_FLAG]:
             method = 'ensure_exists'
         else:
             method = 'check_and_create'
