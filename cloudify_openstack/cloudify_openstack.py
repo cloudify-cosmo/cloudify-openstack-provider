@@ -18,6 +18,7 @@ __author__ = 'ran'
 
 # Standard
 import os
+import errno
 import shutil
 import inspect
 import itertools
@@ -139,6 +140,15 @@ def _deep_merge_dictionaries(overriding_dict, overridden_dict):
 def _output(level, message):
     if level >= logging.INFO or verbose_output:
         print message
+
+
+def _mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError, exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        raise
 
 
 class CosmoOnOpenStackBootstrapper(object):
@@ -649,6 +659,7 @@ class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
         else:
             key = self.nova_client.keypairs.create(key_name)
             pk_target_path = expanduser(private_key_target_path)
+            _mkdir_p(os.path.dirname(private_key_target_path))
             with open(pk_target_path, 'w') as f:
                 f.write(key.private_key)
                 os.system('chmod 600 {0}'.format(pk_target_path))
