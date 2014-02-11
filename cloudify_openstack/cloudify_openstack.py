@@ -294,7 +294,7 @@ class CosmoOnOpenStackBootstrapper(object):
         return expanduser(path)
 
     def _download_package(self, url, path):
-        r = run('wget %s -P %s' % (path, url))
+        r = run('sudo wget %s -P %s' % (path, url))
         return r
 
     def _unpack(self, path):
@@ -323,7 +323,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 management_server_config['management_keypair']),
             management_server_config['user_on_management'])
 
-        env.user = cosmo_config['management_instance_user']
+        env.user = management_server_config['user_on_management']
         env.warn_only = 0
         env.abort_on_prompts = False
         env.connection_attempts = 5
@@ -349,33 +349,21 @@ class CosmoOnOpenStackBootstrapper(object):
                 _output(logging.DEBUG, 'Downloading Cloudify Components Package...')
                 self._download_package(cosmo_config['cloudify_packages_path'],
                                        cosmo_config['cloudify_components_package_url'])
-            # self._exec_command_on_manager(ssh,
-                                          # 'sudo wget %s -P %s' %
-                                          # (cosmo_config['cloudify_components_package_url'],
-                                           # cosmo_config['cloudify_packages_path']))
+
                 _output(logging.DEBUG, 'Downloading Cloudify Package...')
                 self._download_package(cosmo_config['cloudify_packages_path'],
                                        cosmo_config['cloudify_package_url'])
-            # self._exec_command_on_manager(ssh,
-                                          # 'sudo wget %s -P %s' %
-                                          # (cosmo_config['cloudify_package_url'],
-                                           # cosmo_config['cloudify_packages_path']))
+
                 _output(logging.DEBUG, 'Unpacking Cloudify Packages...')
                 self._unpack(cosmo_config['cloudify_packages_path'])
-            # self._exec_command_on_manager(ssh,
-                                          # 'sudo dpkg -i %s/*.deb' %
-                                          # cosmo_config['cloudify_packages_path'])
 
+                _output(logging.DEBUG, 'Install Cloudify on Management Server...')
                 self._run('sudo %s/cloudify3-components-bootstrap.sh' %
                           cosmo_config['cloudify_components_package_path'])
-            # self._exec_command_on_manager(ssh,
-                                          # 'sudo %s/cloudify3-components-bootstrap.sh' %
-                                          # cosmo_config['cloudify_components_package_path'])
+
                 self._run('sudo %s/cloudify3-bootstrap.sh' %
                           cosmo_config['cloudify_package_path'])
-            # self._exec_command_on_manager(ssh,
-                                          # 'sudo %s/cloudify3-bootstrap.sh' %
-                                          # cosmo_config['cloudify_package_path'])
+
             #except:
             #    raise RuntimeError('Failed to install Cloudify on %s' % mgmt_ip)
         else:

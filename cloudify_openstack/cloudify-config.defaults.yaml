@@ -60,9 +60,10 @@ compute:
 
 cloudify:
     cloudify_branch: develop
-    cloudify_components_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3-components_3.0.0_amd64.deb
-    cloudify_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3_3.0.0_amd64.deb
+    #cloudify_components_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3-components_3.0.0_amd64.deb
+    cloudify_components_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify3-components_3.0.0_amd64.deb
+    #cloudify_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3_3.0.0_amd64.deb
+    cloudify_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify3_3.0.0_amd64.deb
     cloudify_packages_path: /cloudify
     cloudify_components_package_path: /cloudify3-components
     cloudify_package_path: /cloudify3
-    management_instance_user: ubuntu
