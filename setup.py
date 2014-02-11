@@ -34,5 +34,6 @@ setup(
         "python-keystoneclient",
         "python-neutronclient",
         "scp"
+        "fabric"
     ]
 )

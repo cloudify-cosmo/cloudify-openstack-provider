@@ -32,6 +32,8 @@ import tempfile
 from os.path import expanduser
 from copy import deepcopy
 from scp import SCPClient
+from fabric.api import run, put
+from fabric.context_managers import settings
 
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
@@ -70,7 +72,7 @@ def init(target_directory, reset_config, is_verbose_output=False):
     return True
 
 
-def bootstrap(config_path=None, is_verbose_output=False):
+def bootstrap(config_path=None, is_verbose_output=False, bootstrap_using_script=True):
     global verbose_output
     verbose_output = is_verbose_output
 
@@ -90,7 +92,7 @@ def bootstrap(config_path=None, is_verbose_output=False):
     bootstrapper = CosmoOnOpenStackBootstrapper(
         config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator)
-    mgmt_ip = bootstrapper.run()
+    mgmt_ip = bootstrapper.do(bootstrap_using_script)
     return mgmt_ip
 
 
@@ -166,9 +168,9 @@ class CosmoOnOpenStackBootstrapper(object):
         self.keypair_creator = keypair_creator
         self.server_creator = server_creator
 
-    def run(self):
+    def do(self, bootstrap_using_script):
         mgmt_ip = self._create_topology()
-        self._bootstrap_manager(mgmt_ip)
+        self._bootstrap_manager(mgmt_ip, bootstrap_using_script)
         return mgmt_ip
 
     def _create_topology(self):
@@ -291,7 +293,23 @@ class CosmoOnOpenStackBootstrapper(object):
             keypair_config['auto_generated']['private_key_target_path']
         return expanduser(path)
 
-    def _bootstrap_manager(self, mgmt_ip):
+    def _download_packages(self, url, path):
+        r = run('wget %s -P %s' % (path, url))
+        return r
+
+    def _unpack(self, path):
+        r = run('sudo dpkg -i %s/*.deb' % path)
+        return r
+
+    def _run(self, command):
+        r = run(command)
+        return r
+
+    def _put(self, this, there):
+        r = put(this, there)
+        return r
+
+    def _bootstrap_manager(self, mgmt_ip, bootstrap_using_script):
         _output(logging.INFO, 'Initializing manager on the machine at {0}'
                 .format(mgmt_ip))
         compute_config = self.config['compute']
@@ -303,71 +321,92 @@ class CosmoOnOpenStackBootstrapper(object):
             self._get_private_key_path_from_keypair_config(
                 management_server_config['management_keypair']),
             management_server_config['user_on_management'])
-        try:
-            self._copy_files_to_manager(
-                ssh,
-                management_server_config['userhome_on_management'],
-                self.config['keystone'],
-                self._get_private_key_path_from_keypair_config(
-                    compute_config['agent_servers']['agents_keypair']))
 
-            _output(logging.DEBUG, 'Installing required packages on manager')
-            self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
-                                               '$(cat /etc/hostname)" | '
-                                               'sudo tee -a /etc/hosts')
-            self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
-                                               + SHELL_PIPE_TO_LOGGER)
-            self._exec_install_command_on_manager(ssh,
-                                                  'apt-get install -y -q '
-                                                  'python-dev git rsync '
-                                                  'openjdk-7-jdk maven '
-                                                  'python-pip'
-                                                  + SHELL_PIPE_TO_LOGGER)
-            self._exec_install_command_on_manager(ssh, 'pip install -q '
-                                                       'retrying '
-                                                       'timeout-decorator')
+        if not bootstrap_using_script:
+            try:
+                self._put(
+                    management_server_config['userhome_on_management'],
+                    self.config['keystone'],
+                    self._get_private_key_path_from_keypair_config(
+                        compute_config['agent_servers']['agents_keypair']))
 
-            # use open sdk java 7
-            self._exec_command_on_manager(
-                ssh,
-                'sudo update-alternatives --set java '
-                '/usr/lib/jvm/java-7-openjdk-amd64/jre/bin/java')
+                with settings(host_string=mgmt_ip):
+                    self._download_package(cosmo_config['cloudify_packages_path'],
+                                           cosmo_config['cloudify_components_package_url'])
+                    self._download_package(cosmo_config['cloudify_packages_path'],
+                                           cosmo_config['cloudify_package_url'])
+                    self._unpack(cosmo_config['cloudify_components_package_path'])
+                    self._unpack(cosmo_config['cloudify_package_path'])
+                    self._run('sudo %s/cloudify3-components-bootstrap.sh')
+                    self._run('sudo %s/cloudify3-bootstrap.sh')
+            except:
+                raise RuntimeError('Failed to install Cloudify on %s' % mgmt_ip)
+        else:
+            try:
+                self._copy_files_to_manager(
+                    ssh,
+                    management_server_config['userhome_on_management'],
+                    self.config['keystone'],
+                    self._get_private_key_path_from_keypair_config(
+                        compute_config['agent_servers']['agents_keypair']))
 
-            # configure and clone cosmo-manager from github
-            branch = cosmo_config['cloudify_branch']
-            workingdir = '{0}/cosmo-work'.format(
-                management_server_config['userhome_on_management'])
-            version = cosmo_config['cloudify_branch']
-            configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
+                _output(logging.DEBUG, 'Installing required packages on manager')
+                self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
+                                                   '$(cat /etc/hostname)" | '
+                                                   'sudo tee -a /etc/hosts')
+                self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
+                                                   + SHELL_PIPE_TO_LOGGER)
+                self._exec_install_command_on_manager(ssh,
+                                                      'apt-get install -y -q '
+                                                      'python-dev git rsync '
+                                                      'openjdk-7-jdk maven '
+                                                      'python-pip'
+                                                      + SHELL_PIPE_TO_LOGGER)
+                self._exec_install_command_on_manager(ssh, 'pip install -q '
+                                                           'retrying '
+                                                           'timeout-decorator')
 
-            _output(logging.DEBUG, 'cloning cosmo on manager')
-            self._exec_command_on_manager(ssh, 'mkdir -p {0}'
-                .format(workingdir))
-            self._exec_command_on_manager(ssh, 'git clone https://github.com/'
-                                               'CloudifySource/cosmo-manager'
-                                               '.git {0}/cosmo-manager'
-                                               ' --depth 1'
-                .format(workingdir))
-            self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
-                                               'git checkout {1} )'
-                .format(workingdir, branch))
+                # use open sdk java 7
+                self._exec_command_on_manager(
+                    ssh,
+                    'sudo update-alternatives --set java '
+                    '/usr/lib/jvm/java-7-openjdk-amd64/jre/bin/java')
 
-            _output(logging.DEBUG, 'running the manager bootstrap script '
-                                   'remotely')
-            run_script_command = 'DEBIAN_FRONTEND=noninteractive python2.7 ' \
-                                 '{0}/cosmo-manager/vagrant/' \
-                                 'bootstrap_lxc_manager.py --working_dir=' \
-                                 '{0} --cosmo_version={1} ' \
-                                 '--config_dir={2} ' \
-                                 '--install_openstack_provisioner ' \
-                                 '--install_logstash' \
-                                 .format(workingdir, version, configdir)
-            run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
-            self._exec_command_on_manager(ssh, run_script_command)
+                # configure and clone cosmo-manager from github
+                branch = cosmo_config['cloudify_branch']
+                workingdir = '{0}/cosmo-work'.format(
+                    management_server_config['userhome_on_management'])
+                version = cosmo_config['cloudify_branch']
+                configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
 
-            _output(logging.DEBUG, 'rebuilding cosmo on manager')
-        finally:
-            ssh.close()
+                _output(logging.DEBUG, 'cloning cosmo on manager')
+                self._exec_command_on_manager(ssh, 'mkdir -p {0}'
+                    .format(workingdir))
+                self._exec_command_on_manager(ssh, 'git clone https://github.com/'
+                                                   'CloudifySource/cosmo-manager'
+                                                   '.git {0}/cosmo-manager'
+                                                   ' --depth 1'
+                    .format(workingdir))
+                self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
+                                                   'git checkout {1} )'
+                    .format(workingdir, branch))
+
+                _output(logging.DEBUG, 'running the manager bootstrap script '
+                                       'remotely')
+                run_script_command = 'DEBIAN_FRONTEND=noninteractive python2.7 ' \
+                                     '{0}/cosmo-manager/vagrant/' \
+                                     'bootstrap_lxc_manager.py --working_dir=' \
+                                     '{0} --cosmo_version={1} ' \
+                                     '--config_dir={2} ' \
+                                     '--install_openstack_provisioner ' \
+                                     '--install_logstash' \
+                                     .format(workingdir, version, configdir)
+                run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
+                self._exec_command_on_manager(ssh, run_script_command)
+
+                _output(logging.DEBUG, 'rebuilding cosmo on manager')
+            finally:
+                ssh.close()
 
     def _create_ssh_channel_with_mgmt(self, mgmt_ip, management_key_path,
                                       user_on_management):
