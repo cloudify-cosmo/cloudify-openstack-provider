@@ -32,8 +32,8 @@ import tempfile
 from os.path import expanduser
 from copy import deepcopy
 from scp import SCPClient
-from fabric.api import run, put
-from fabric.context_managers import settings
+from fabric.api import run, put, env
+from fabric.context_managers import settings, hide
 
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
@@ -293,7 +293,7 @@ class CosmoOnOpenStackBootstrapper(object):
             keypair_config['auto_generated']['private_key_target_path']
         return expanduser(path)
 
-    def _download_packages(self, url, path):
+    def _download_package(self, url, path):
         r = run('wget %s -P %s' % (path, url))
         return r
 
@@ -315,6 +315,7 @@ class CosmoOnOpenStackBootstrapper(object):
         compute_config = self.config['compute']
         cosmo_config = self.config['cloudify']
         management_server_config = compute_config['management_server']
+        mgr_kpconf = compute_config['management_server']['management_keypair']
 
         ssh = self._create_ssh_channel_with_mgmt(
             mgmt_ip,
@@ -322,25 +323,61 @@ class CosmoOnOpenStackBootstrapper(object):
                 management_server_config['management_keypair']),
             management_server_config['user_on_management'])
 
-        if not bootstrap_using_script:
-            try:
-                self._put(
-                    management_server_config['userhome_on_management'],
-                    self.config['keystone'],
-                    self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']))
+        env.user = cosmo_config['management_instance_user']
+        env.warn_only = 0
+        env.abort_on_prompts = False
+        env.connection_attempts = 5
+        env.keepalive = 0
+        env.linewise = False
+        env.pool_size = 0
+        env.skip_bad_hosts = False
+        env.timeout = 10
+        env.forward_agent = True
+        env.status = False
+        env.key_filename = [mgr_kpconf['auto_generated']['private_key_target_path']]
 
-                with settings(host_string=mgmt_ip):
-                    self._download_package(cosmo_config['cloudify_packages_path'],
-                                           cosmo_config['cloudify_components_package_url'])
-                    self._download_package(cosmo_config['cloudify_packages_path'],
-                                           cosmo_config['cloudify_package_url'])
-                    self._unpack(cosmo_config['cloudify_components_package_path'])
-                    self._unpack(cosmo_config['cloudify_package_path'])
-                    self._run('sudo %s/cloudify3-components-bootstrap.sh')
-                    self._run('sudo %s/cloudify3-bootstrap.sh')
-            except:
-                raise RuntimeError('Failed to install Cloudify on %s' % mgmt_ip)
+        if not bootstrap_using_script:
+            #try:
+            self._copy_files_to_manager(
+                ssh,
+                management_server_config['userhome_on_management'],
+                self.config['keystone'],
+                self._get_private_key_path_from_keypair_config(
+                    compute_config['agent_servers']['agents_keypair']))
+
+            with settings(host_string=mgmt_ip), hide('running'):
+                _output(logging.DEBUG, 'Downloading Cloudify Components Package...')
+                self._download_package(cosmo_config['cloudify_packages_path'],
+                                       cosmo_config['cloudify_components_package_url'])
+            # self._exec_command_on_manager(ssh,
+                                          # 'sudo wget %s -P %s' %
+                                          # (cosmo_config['cloudify_components_package_url'],
+                                           # cosmo_config['cloudify_packages_path']))
+                _output(logging.DEBUG, 'Downloading Cloudify Package...')
+                self._download_package(cosmo_config['cloudify_packages_path'],
+                                       cosmo_config['cloudify_package_url'])
+            # self._exec_command_on_manager(ssh,
+                                          # 'sudo wget %s -P %s' %
+                                          # (cosmo_config['cloudify_package_url'],
+                                           # cosmo_config['cloudify_packages_path']))
+                _output(logging.DEBUG, 'Unpacking Cloudify Packages...')
+                self._unpack(cosmo_config['cloudify_packages_path'])
+            # self._exec_command_on_manager(ssh,
+                                          # 'sudo dpkg -i %s/*.deb' %
+                                          # cosmo_config['cloudify_packages_path'])
+
+                self._run('sudo %s/cloudify3-components-bootstrap.sh' %
+                          cosmo_config['cloudify_components_package_path'])
+            # self._exec_command_on_manager(ssh,
+                                          # 'sudo %s/cloudify3-components-bootstrap.sh' %
+                                          # cosmo_config['cloudify_components_package_path'])
+                self._run('sudo %s/cloudify3-bootstrap.sh' %
+                          cosmo_config['cloudify_package_path'])
+            # self._exec_command_on_manager(ssh,
+                                          # 'sudo %s/cloudify3-bootstrap.sh' %
+                                          # cosmo_config['cloudify_package_path'])
+            #except:
+            #    raise RuntimeError('Failed to install Cloudify on %s' % mgmt_ip)
         else:
             try:
                 self._copy_files_to_manager(
