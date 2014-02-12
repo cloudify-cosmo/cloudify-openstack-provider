@@ -72,7 +72,8 @@ def init(target_directory, reset_config, is_verbose_output=False):
     return True
 
 
-def bootstrap(config_path=None, is_verbose_output=False, bootstrap_using_script=True):
+def bootstrap(config_path=None, is_verbose_output=False,
+              bootstrap_using_script=True):
     global verbose_output
     verbose_output = is_verbose_output
 
@@ -339,7 +340,8 @@ class CosmoOnOpenStackBootstrapper(object):
         env.timeout = 10
         env.forward_agent = True
         env.status = False
-        env.key_filename = [mgr_kpconf['auto_generated']['private_key_target_path']]
+        env.key_filename = [mgr_kpconf['auto_generated']
+                           ['private_key_target_path']]
 
         if not bootstrap_using_script:
             self._copy_files_to_manager(
@@ -351,18 +353,23 @@ class CosmoOnOpenStackBootstrapper(object):
 
             with settings(host_string=mgmt_ip), hide('running'):
 
-                _output(logging.DEBUG, 'Downloading Cloudify Components Package...')
-                self._download_package(cosmo_config['cloudify_packages_path'],
-                                       cosmo_config['cloudify_components_package_url'])
+                _output(logging.DEBUG, 'Downloading Cloudify'
+                                       ' Components Package...')
+                self._download_package(
+                    cosmo_config['cloudify_packages_path'],
+                    cosmo_config['cloudify_components_package_url'])
 
                 _output(logging.DEBUG, 'Downloading Cloudify Package...')
-                self._download_package(cosmo_config['cloudify_packages_path'],
-                                       cosmo_config['cloudify_package_url'])
+                self._download_package(
+                    cosmo_config['cloudify_packages_path'],
+                    cosmo_config['cloudify_package_url'])
 
                 _output(logging.DEBUG, 'Unpacking Cloudify Packages...')
-                self._unpack(cosmo_config['cloudify_packages_path'])
+                self._unpack(
+                    cosmo_config['cloudify_packages_path'])
 
-                _output(logging.DEBUG, 'Install Cloudify on Management Server...')
+                _output(logging.DEBUG, 'Install Cloudify on'
+                                       ' Management Server...')
                 self._run('sudo %s/cloudify3-components-bootstrap.sh' %
                           cosmo_config['cloudify_components_package_path'])
 
@@ -377,7 +384,8 @@ class CosmoOnOpenStackBootstrapper(object):
                     self._get_private_key_path_from_keypair_config(
                         compute_config['agent_servers']['agents_keypair']))
 
-                _output(logging.DEBUG, 'Installing required packages on manager')
+                _output(logging.DEBUG, 'Installing required packages'
+                                       ' on manager')
                 self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
                                                    '$(cat /etc/hostname)" | '
                                                    'sudo tee -a /etc/hosts')
@@ -409,10 +417,11 @@ class CosmoOnOpenStackBootstrapper(object):
                 _output(logging.DEBUG, 'cloning cosmo on manager')
                 self._exec_command_on_manager(ssh, 'mkdir -p {0}'
                     .format(workingdir))
-                self._exec_command_on_manager(ssh, 'git clone https://github.com/'
-                                                   'CloudifySource/cosmo-manager'
-                                                   '.git {0}/cosmo-manager'
-                                                   ' --depth 1'
+                self._exec_command_on_manager(ssh,
+                                              'git clone https://github.com/'
+                                              'CloudifySource/cosmo-manager'
+                                              '.git {0}/cosmo-manager'
+                                              ' --depth 1'
                     .format(workingdir))
                 self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
                                                    'git checkout {1} )'
@@ -420,10 +429,10 @@ class CosmoOnOpenStackBootstrapper(object):
 
                 _output(logging.DEBUG, 'running the manager bootstrap script '
                                        'remotely')
-                run_script_command = 'DEBIAN_FRONTEND=noninteractive python2.7 ' \
-                                     '{0}/cosmo-manager/vagrant/' \
-                                     'bootstrap_lxc_manager.py --working_dir=' \
-                                     '{0} --cosmo_version={1} ' \
+                run_script_command = 'DEBIAN_FRONTEND=noninteractive ' \
+                                     'python2.7 {0}/cosmo-manager/vagrant/' \
+                                     'bootstrap_lxc_manager.py ' \
+                                     '--working_dir={0} --cosmo_version={1} ' \
                                      '--config_dir={2} ' \
                                      '--install_openstack_provisioner ' \
                                      '--install_logstash' \
