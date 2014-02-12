@@ -32,7 +32,7 @@ import tempfile
 from os.path import expanduser
 from copy import deepcopy
 from scp import SCPClient
-from fabric.api import run, put, env
+from fabric.api import run, env
 from fabric.context_managers import settings, hide
 
 # OpenStack
@@ -293,21 +293,26 @@ class CosmoOnOpenStackBootstrapper(object):
             keypair_config['auto_generated']['private_key_target_path']
         return expanduser(path)
 
+    def _run_with_retries(self, command, retries=3, sleeper=3, capture=False):
+
+        for execution in range(retries):
+            try:
+                r = run(command, capture)
+                return
+            except:
+                time.sleep(sleeper)
+        if r.failed:
+            _output(logging.INFO, 'failed running: %s' % command)
+        return
+
     def _download_package(self, url, path):
-        r = run('sudo wget %s -P %s' % (path, url))
-        return r
+        self._run_with_retries('sudo wget %s -P %s' % (path, url))
 
     def _unpack(self, path):
-        r = run('sudo dpkg -i %s/*.deb' % path)
-        return r
+        self._run_with_retries('sudo dpkg -i %s/*.deb' % path)
 
     def _run(self, command):
-        r = run(command)
-        return r
-
-    def _put(self, this, there):
-        r = put(this, there)
-        return r
+        self._run_with_retries(command)
 
     def _bootstrap_manager(self, mgmt_ip, bootstrap_using_script):
         _output(logging.INFO, 'Initializing manager on the machine at {0}'
@@ -337,7 +342,6 @@ class CosmoOnOpenStackBootstrapper(object):
         env.key_filename = [mgr_kpconf['auto_generated']['private_key_target_path']]
 
         if not bootstrap_using_script:
-            #try:
             self._copy_files_to_manager(
                 ssh,
                 management_server_config['userhome_on_management'],
@@ -346,6 +350,7 @@ class CosmoOnOpenStackBootstrapper(object):
                     compute_config['agent_servers']['agents_keypair']))
 
             with settings(host_string=mgmt_ip), hide('running'):
+
                 _output(logging.DEBUG, 'Downloading Cloudify Components Package...')
                 self._download_package(cosmo_config['cloudify_packages_path'],
                                        cosmo_config['cloudify_components_package_url'])
@@ -363,9 +368,6 @@ class CosmoOnOpenStackBootstrapper(object):
 
                 self._run('sudo %s/cloudify3-bootstrap.sh' %
                           cosmo_config['cloudify_package_path'])
-
-            #except:
-            #    raise RuntimeError('Failed to install Cloudify on %s' % mgmt_ip)
         else:
             try:
                 self._copy_files_to_manager(
