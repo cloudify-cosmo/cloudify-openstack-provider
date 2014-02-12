@@ -33,7 +33,7 @@ setup(
         "python-novaclient",
         "python-keystoneclient",
         "python-neutronclient",
-        "scp"
+        "scp",
         "fabric"
     ]
 )
