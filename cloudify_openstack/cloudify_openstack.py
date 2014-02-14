@@ -29,11 +29,17 @@ import socket
 import logging
 import paramiko
 import tempfile
+import sys
 from os.path import expanduser
 from copy import deepcopy
 from scp import SCPClient
 from fabric.api import run, env
 from fabric.context_managers import settings, hide
+
+# Validator
+from IPy import IP
+from jsonschema import validate, ValidationError
+from schemas import OPENSTACK_SCHEMA
 
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
@@ -78,6 +84,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
     verbose_output = is_verbose_output
 
     config = _read_config(config_path)
+    _validate_config(config)
 
     connector = OpenStackConnector(config)
     network_creator = OpenStackNetworkCreator(connector)
@@ -95,6 +102,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
         sg_creator, floating_ip_creator, keypair_creator, server_creator)
     mgmt_ip = bootstrapper.do(bootstrap_using_script)
     return mgmt_ip
+    # return '1.1.1.1'
 
 
 def teardown(management_ip, is_verbose_output=False):
@@ -152,6 +160,42 @@ def _mkdir_p(path):
         if exc.errno == errno.EEXIST and os.path.isdir(path):
             pass
         raise
+
+
+def _validate_config(config, schema=OPENSTACK_SCHEMA):
+    verifier = OpenStackConfigFileValidator()
+    _output(logging.INFO, 'validating provider configuration...')
+    verifier._validate_schema(config, schema)
+    verifier._validate_cidr('networking.subnet.cidr',
+                            config['networking']['subnet']['cidr'])
+    verifier._validate_cidr('networking.management_security_group.cidr',
+                            config['networking']['subnet']['cidr'])
+
+
+class OpenStackConfigFileValidator:
+
+    def _validate_schema(self, config, schema):
+        try:
+            validate(config, schema)
+            return True
+        except ValidationError as e:
+            sys.stderr.write('config file validation error at key: {0}. {1}'
+                             ' (please verify configuration'
+                             ' file integrity)\n'
+                             .format('.'.join(e.path), e.message))
+            sys.exit()
+
+    def _validate_cidr(self, field, cidr):
+        try:
+            IP(cidr)
+            return True
+        except ValueError as e:
+            _output(logging.ERROR, 'config file validation error at key:'
+                                   ' {0}. {1}'
+                                   ' (please verify configuration'
+                                   ' file integrity)'
+                                   .format(field, e.message))
+            sys.exit()
 
 
 class CosmoOnOpenStackBootstrapper(object):
