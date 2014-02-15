@@ -195,7 +195,7 @@ OPENSTACK_SCHEMA = {
                     "type":"object",                                    
                     "properties":{
                         "cidr": {
-                            "type":"string",                                                    
+                            "type":"string",
                         },
                         "externally_provisioned": {
                             "enum": [ True, False ],
@@ -226,7 +226,7 @@ OPENSTACK_SCHEMA = {
                     "type":"object",                                    
                     "properties":{
                         "cidr": {
-                            "type":"string",                                                    
+                            "type":"string",
                         },
                         "externally_provisioned": {
                             "enum": [ True, False ],

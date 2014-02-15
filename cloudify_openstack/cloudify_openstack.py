@@ -38,7 +38,7 @@ from fabric.context_managers import settings, hide
 
 # Validator
 from IPy import IP
-from jsonschema import validate, ValidationError
+from jsonschema import ValidationError, Draft4Validator
 from schemas import OPENSTACK_SCHEMA
 
 # OpenStack
@@ -164,7 +164,7 @@ def _mkdir_p(path):
 
 def _validate_config(config, schema=OPENSTACK_SCHEMA):
     verifier = OpenStackConfigFileValidator()
-    _output(logging.INFO, 'validating provider configuration...')
+    _output(logging.INFO, 'validating provider configuration file...')
     verifier._validate_schema(config, schema)
     verifier._validate_cidr('networking.subnet.cidr',
                             config['networking']['subnet']['cidr'])
@@ -175,25 +175,23 @@ def _validate_config(config, schema=OPENSTACK_SCHEMA):
 class OpenStackConfigFileValidator:
 
     def _validate_schema(self, config, schema):
+        v = Draft4Validator(schema)
+        if v.iter_errors(config):
+            errors = ';\n'.join('config file validation error found at key:'
+                                ' %s, %s' % ('.'.join(e.path), e.message)
+                                for e in v.iter_errors(config))
         try:
-            validate(config, schema)
-            return True
-        except ValidationError as e:
-            sys.stderr.write('config file validation error at key: {0}. {1}'
-                             ' (please verify configuration'
-                             ' file integrity)\n'
-                             .format('.'.join(e.path), e.message))
+            v.validate(config)
+        except ValidationError:
+            _output(logging.ERROR, '{0}'.format(errors))
             sys.exit()
 
     def _validate_cidr(self, field, cidr):
         try:
             IP(cidr)
-            return True
         except ValueError as e:
             _output(logging.ERROR, 'config file validation error at key:'
                                    ' {0}. {1}'
-                                   ' (please verify configuration'
-                                   ' file integrity)'
                                    .format(field, e.message))
             sys.exit()
 
