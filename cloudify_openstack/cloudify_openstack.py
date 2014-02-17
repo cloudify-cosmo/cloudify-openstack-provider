@@ -38,11 +38,6 @@ import logging
 import logging.config
 import config
 
-# Validator
-from IPy import IP
-from jsonschema import ValidationError, Draft4Validator
-from schemas import OPENSTACK_SCHEMA
-
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
@@ -107,7 +102,6 @@ def bootstrap(config_path=None, is_verbose_output=False,
         lgr.setLevel(logging.DEBUG)
 
     config = _read_config(config_path)
-    _validate_config(config)
 
     connector = OpenStackConnector(config)
     network_creator = OpenStackNetworkCreator(connector)
@@ -183,40 +177,6 @@ def _mkdir_p(path):
         if exc.errno == errno.EEXIST and os.path.isdir(path):
             pass
         raise
-
-
-def _validate_config(config, schema=OPENSTACK_SCHEMA):
-    verifier = OpenStackConfigFileValidator()
-    lgr.info('validating provider configuration file...')
-
-    verifier._validate_cidr('networking.subnet.cidr',
-                            config['networking']['subnet']['cidr'])
-    verifier._validate_cidr('networking.management_security_group.cidr',
-                            config['networking']['subnet']['cidr'])
-    verifier._validate_schema(config, schema)
-
-
-class OpenStackConfigFileValidator:
-
-    def _validate_schema(self, config, schema):
-        v = Draft4Validator(schema)
-        if v.iter_errors(config):
-            errors = ';\n'.join('config file validation error found at key:'
-                                ' %s, %s' % ('.'.join(e.path), e.message)
-                                for e in v.iter_errors(config))
-        try:
-            v.validate(config)
-        except ValidationError:
-            lgr.error('{0}'.format(errors))
-            sys.exit()
-
-    def _validate_cidr(self, field, cidr):
-        try:
-            IP(cidr)
-        except ValueError as e:
-            lgr.error('config file validation error at key:'
-                      ' {0}. {1}'.format(field, e.message))
-            sys.exit()
 
 
 class CosmoOnOpenStackBootstrapper(object):
