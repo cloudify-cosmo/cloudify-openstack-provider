@@ -61,7 +61,8 @@ try:
     lgr = logging.getLogger('main')
     lgr.setLevel(logging.INFO)
 except ValueError:
-    sys.exit('could not initiate logger. try sudo...')
+    sys.exit('could not initiate logger.'
+             ' try sudo and/or verify your logger config...')
 
 
 EP_FLAG = 'externally_provisioned'
