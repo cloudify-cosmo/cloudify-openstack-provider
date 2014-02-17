@@ -26,7 +26,6 @@ import time
 import yaml
 import json
 import socket
-import logging
 import paramiko
 import tempfile
 import sys
@@ -35,6 +34,9 @@ from copy import deepcopy
 from scp import SCPClient
 from fabric.api import run, env
 from fabric.context_managers import settings, hide
+import logging
+import logging.config
+import config
 
 # Validator
 from IPy import IP
@@ -45,6 +47,21 @@ from schemas import OPENSTACK_SCHEMA
 import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
+
+# http://stackoverflow.com/questions/8144545/turning-off-logging-in-paramiko
+logging.getLogger("paramiko").setLevel(logging.WARNING)
+logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(
+    logging.ERROR)
+
+try:
+    d = os.path.dirname(config.LOGGER['handlers']['file']['filename'])
+    if not os.path.exists(d):
+        os.makedirs(d)
+    logging.config.dictConfig(config.LOGGER)
+    lgr = logging.getLogger('main')
+    lgr.setLevel(logging.INFO)
+except ValueError:
+    sys.exit('could not initiate logger. try sudo...')
 
 
 EP_FLAG = 'externally_provisioned'
@@ -62,19 +79,22 @@ DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
 verbose_output = False
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
-
 
 def init(target_directory, reset_config, is_verbose_output=False):
+    global verbose_output
+    verbose_output = is_verbose_output
+    if verbose_output:
+        lgr.setLevel(logging.DEBUG)
+
     if not reset_config and os.path.exists(
             os.path.join(target_directory, CONFIG_FILE_NAME)):
         return False
 
     provider_dir = os.path.dirname(os.path.realpath(__file__))
-    shutil.copy(os.path.join(provider_dir, CONFIG_FILE_NAME),
-                target_directory)
+    files_path = os.path.join(provider_dir, CONFIG_FILE_NAME)
+    lgr.debug('copying provider files from {0} to {1}'
+              .format(files_path, target_directory))
+    shutil.copy(files_path, target_directory)
     return True
 
 
@@ -82,6 +102,8 @@ def bootstrap(config_path=None, is_verbose_output=False,
               bootstrap_using_script=True):
     global verbose_output
     verbose_output = is_verbose_output
+    if verbose_output:
+        lgr.setLevel(logging.DEBUG)
 
     config = _read_config(config_path)
     _validate_config(config)
@@ -164,12 +186,13 @@ def _mkdir_p(path):
 
 def _validate_config(config, schema=OPENSTACK_SCHEMA):
     verifier = OpenStackConfigFileValidator()
-    _output(logging.INFO, 'validating provider configuration file...')
-    verifier._validate_schema(config, schema)
+    lgr.info('validating provider configuration file...')
+
     verifier._validate_cidr('networking.subnet.cidr',
                             config['networking']['subnet']['cidr'])
     verifier._validate_cidr('networking.management_security_group.cidr',
                             config['networking']['subnet']['cidr'])
+    verifier._validate_schema(config, schema)
 
 
 class OpenStackConfigFileValidator:
@@ -183,16 +206,15 @@ class OpenStackConfigFileValidator:
         try:
             v.validate(config)
         except ValidationError:
-            _output(logging.ERROR, '{0}'.format(errors))
+            lgr.error('{0}'.format(errors))
             sys.exit()
 
     def _validate_cidr(self, field, cidr):
         try:
             IP(cidr)
         except ValueError as e:
-            _output(logging.ERROR, 'config file validation error at key:'
-                                   ' {0}. {1}'
-                                   .format(field, e.message))
+            lgr.error('config file validation error at key:'
+                      ' {0}. {1}'.format(field, e.message))
             sys.exit()
 
 
@@ -210,6 +232,9 @@ class CosmoOnOpenStackBootstrapper(object):
         self.floating_ip_creator = floating_ip_creator
         self.keypair_creator = keypair_creator
         self.server_creator = server_creator
+
+        global verbose_output
+        self.verbose_output = verbose_output
 
     def do(self, bootstrap_using_script):
         mgmt_ip = self._create_topology()
@@ -325,8 +350,8 @@ class CosmoOnOpenStackBootstrapper(object):
         else:
             floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
 
-        _output(logging.INFO, 'Attaching IP {0} to the instance'.format(
-                floating_ip))
+        lgr.info('attaching IP {0} to the instance'.format(
+            floating_ip))
         self.server_creator.add_floating_ip(server_id, floating_ip)
         return floating_ip
 
@@ -336,16 +361,26 @@ class CosmoOnOpenStackBootstrapper(object):
             keypair_config['auto_generated']['private_key_target_path']
         return expanduser(path)
 
-    def _run_with_retries(self, command, retries=3, sleeper=3, capture=False):
+    def _run_with_retries(self, command, retries=3, sleeper=3):
 
         for execution in range(retries):
-            try:
-                r = run(command, capture)
+            lgr.debug('running command: {0}'
+                      .format(command))
+            if not self.verbose_output:
+                with hide('running', 'stdout'):
+                    r = run(command)
+            else:
+                r = run(command)
+            if r.succeeded:
+                lgr.debug('successfully ran command: {0}'
+                          .format(command))
                 return
-            except:
+            else:
+                lgr.warning('retrying command: {0}'
+                            .format(command))
                 time.sleep(sleeper)
-        if r.failed:
-            _output(logging.INFO, 'failed running: %s' % command)
+        lgr.error('failed to run: {0}, {1}'
+                  .format(command), r.stdout)
         return
 
     def _download_package(self, url, path):
@@ -358,13 +393,14 @@ class CosmoOnOpenStackBootstrapper(object):
         self._run_with_retries(command)
 
     def _bootstrap_manager(self, mgmt_ip, bootstrap_using_script):
-        _output(logging.INFO, 'Initializing manager on the machine at {0}'
-                .format(mgmt_ip))
+        lgr.info('initializing manager on the machine at {0}'
+                 .format(mgmt_ip))
         compute_config = self.config['compute']
         cosmo_config = self.config['cloudify']
         management_server_config = compute_config['management_server']
         mgr_kpconf = compute_config['management_server']['management_keypair']
 
+        lgr.debug('Creating ssh channel to machine...')
         ssh = self._create_ssh_channel_with_mgmt(
             mgmt_ip,
             self._get_private_key_path_from_keypair_config(
@@ -386,6 +422,7 @@ class CosmoOnOpenStackBootstrapper(object):
                            ['private_key_target_path']]
 
         if not bootstrap_using_script:
+
             self._copy_files_to_manager(
                 ssh,
                 management_server_config['userhome_on_management'],
@@ -395,28 +432,31 @@ class CosmoOnOpenStackBootstrapper(object):
 
             with settings(host_string=mgmt_ip), hide('running'):
 
-                _output(logging.DEBUG, 'Downloading Cloudify'
-                                       ' Components Package...')
+                lgr.info('downloading cloudify components package...')
                 self._download_package(
                     cosmo_config['cloudify_packages_path'],
                     cosmo_config['cloudify_components_package_url'])
 
-                _output(logging.DEBUG, 'Downloading Cloudify Package...')
+                lgr.info('downloading cloudify package...')
                 self._download_package(
                     cosmo_config['cloudify_packages_path'],
                     cosmo_config['cloudify_package_url'])
 
-                _output(logging.DEBUG, 'Unpacking Cloudify Packages...')
+                lgr.info('unpacking cloudify packages...')
                 self._unpack(
                     cosmo_config['cloudify_packages_path'])
 
-                _output(logging.DEBUG, 'Install Cloudify on'
-                                       ' Management Server...')
+                v = self.verbose_output
+                self.verbose_output = True
+
+                lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
                 self._run('sudo %s/cloudify3-components-bootstrap.sh' %
                           cosmo_config['cloudify_components_package_path'])
 
                 self._run('sudo %s/cloudify3-bootstrap.sh' %
                           cosmo_config['cloudify_package_path'])
+
+                self.verbose_output = v
         else:
             try:
                 self._copy_files_to_manager(
@@ -426,8 +466,8 @@ class CosmoOnOpenStackBootstrapper(object):
                     self._get_private_key_path_from_keypair_config(
                         compute_config['agent_servers']['agents_keypair']))
 
-                _output(logging.DEBUG, 'Installing required packages'
-                                       ' on manager')
+                lgr.debug('Installing required packages'
+                          ' on manager')
                 self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
                                                    '$(cat /etc/hostname)" | '
                                                    'sudo tee -a /etc/hosts')
@@ -456,7 +496,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 version = cosmo_config['cloudify_branch']
                 configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
 
-                _output(logging.DEBUG, 'cloning cosmo on manager')
+                lgr.debug('cloning cosmo on manager')
                 self._exec_command_on_manager(ssh, 'mkdir -p {0}'
                     .format(workingdir))
                 self._exec_command_on_manager(ssh,
@@ -469,8 +509,8 @@ class CosmoOnOpenStackBootstrapper(object):
                                                    'git checkout {1} )'
                     .format(workingdir, branch))
 
-                _output(logging.DEBUG, 'running the manager bootstrap script '
-                                       'remotely')
+                lgr.debug('running the manager bootstrap script '
+                          'remotely')
                 run_script_command = 'DEBIAN_FRONTEND=noninteractive ' \
                                      'python2.7 {0}/cosmo-manager/vagrant/' \
                                      'bootstrap_lxc_manager.py ' \
@@ -482,7 +522,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
                 self._exec_command_on_manager(ssh, run_script_command)
 
-                _output(logging.DEBUG, 'rebuilding cosmo on manager')
+                lgr.debug('rebuilding cosmo on manager')
             finally:
                 ssh.close()
 
@@ -501,15 +541,15 @@ class CosmoOnOpenStackBootstrapper(object):
                             look_for_keys=False)
                 return ssh
             except socket.error:
-                _output(logging.DEBUG,
-                        "SSH connection to {0} failed. Waiting {1} seconds "
-                        "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
+                lgr.debug(
+                    "SSH connection to {0} failed. Waiting {1} seconds "
+                    "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
                 time.sleep(SSH_CONNECT_SLEEP)
         raise RuntimeError('Failed to ssh connect to management server')
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
                                keystone_config, agents_key_path):
-        _output(logging.INFO, 'Uploading files to manager')
+        lgr.info('uploading keystone files to manager')
         scp = SCPClient(ssh.get_transport())
 
         tempdir = tempfile.mkdtemp()
@@ -536,7 +576,7 @@ class CosmoOnOpenStackBootstrapper(object):
         return self._exec_command_on_manager(ssh, command)
 
     def _exec_command_on_manager(self, ssh, command):
-        _output(logging.INFO, 'EXEC START: {0}'.format(command))
+        lgr.info('EXEC START: {0}'.format(command))
         chan = ssh.get_transport().open_session()
         chan.exec_command(command)
         stdin = chan.makefile('wb', -1)
@@ -553,7 +593,7 @@ class CosmoOnOpenStackBootstrapper(object):
                                    .format(command, errors))
 
             response_lines = stdout.readlines()
-            _output(logging.INFO, 'EXEC END: {0}'.format(command))
+            lgr.info('EXEC END: {0}'.format(command))
             return response_lines
         finally:
             stdin.close()
@@ -577,7 +617,7 @@ class CreateOrEnsureExists(object):
         return getattr(self, method)(name, *args, **kw)
 
     def check_and_create(self, name, *args, **kw):
-        _output(logging.INFO, "Will create {0} '{1}'".format(
+        lgr.debug("Will create {0} '{1}'".format(
             self.__class__.WHAT, name))
         if self.list_objects_with_name(name):
             raise OpenStackLogicError("{0} '{1}' already exists".format(
@@ -585,8 +625,8 @@ class CreateOrEnsureExists(object):
         return self.create(name, *args, **kw)
 
     def ensure_exists(self, name, *args, **kw):
-        _output(logging.INFO, "Will use existing {0} '{1}'"
-                .format(self.__class__.WHAT, name))
+        lgr.debug("Will use existing {0} '{1}'"
+                  .format(self.__class__.WHAT, name))
         ret = self.find_by_name(name)
         if not ret:
             raise OpenStackLogicError("{0} '{1}' was not found".format(
@@ -828,8 +868,8 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
                                "already exists"
                                .format(server_name))
 
-        _output(logging.INFO, "Asking Nova to create server. Parameters: {0}"
-                .format(str(params)))
+        lgr.debug("Asking Nova to create server. Parameters: {0}"
+                  .format(str(params)))
 
         configured_sgs = []
         if params['security_groups'] is not None:
@@ -857,13 +897,12 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
                     "{1} instances".format(ip, len(ls)))
 
             if not ls[0].instance_id:
-                _output(logging.DEBUG,
-                        "Floating IP {0} is not attached to any instance. "
-                        "Continuing.".format(ip))
+                lgr.debug(
+                    "Floating IP {0} is not attached to any instance. "
+                    "Continuing.".format(ip))
                 break
 
-            _output(
-                logging.DEBUG,
+            lgr.debug(
                 "Floating IP {0} is attached "
                 "to instance {1}. Detaching.".format(ip, ls[0].instance_id))
             self.nova_client.servers.remove_floating_ip(ls[0].instance_id, ip)
