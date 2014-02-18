@@ -190,7 +190,7 @@ def _mkdir_p(path):
         os.makedirs(path)
     except OSError, exc:
         if exc.errno == errno.EEXIST and os.path.isdir(path):
-            pass
+            return
         raise
 
 
