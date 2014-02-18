@@ -34,6 +34,8 @@ setup(
         "python-keystoneclient",
         "python-neutronclient",
         "scp",
-        "fabric"
+        "fabric",
+        "jsonschema",
+        "IPy"
     ]
 )
