@@ -43,22 +43,6 @@ import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
 
-# http://stackoverflow.com/questions/8144545/turning-off-logging-in-paramiko
-logging.getLogger("paramiko").setLevel(logging.WARNING)
-logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(
-    logging.ERROR)
-
-try:
-    d = os.path.dirname(config.LOGGER['handlers']['file']['filename'])
-    if not os.path.exists(d):
-        os.makedirs(d)
-    logging.config.dictConfig(config.LOGGER)
-    lgr = logging.getLogger('main')
-    lgr.setLevel(logging.INFO)
-except ValueError:
-    sys.exit('could not initiate logger.'
-             ' try sudo and/or verify your logger config...')
-
 
 EP_FLAG = 'externally_provisioned'
 
@@ -76,11 +60,28 @@ DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 verbose_output = False
 
 
+#initialize logger
+try:
+    d = os.path.dirname(config.LOGGER['handlers']['file']['filename'])
+    if not os.path.exists(d):
+        os.makedirs(d)
+    logging.config.dictConfig(config.LOGGER)
+    lgr = logging.getLogger('main')
+    lgr.setLevel(logging.INFO)
+except ValueError:
+    sys.exit('could not initialize logger.'
+             ' verify your logger config'
+             ' and permissions to write to {0}'
+             .format(config.LOGGER['handlers']['file']['filename']))
+
+# http://stackoverflow.com/questions/8144545/turning-off-logging-in-paramiko
+logging.getLogger("paramiko").setLevel(logging.WARNING)
+logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(
+    logging.ERROR)
+
+
 def init(target_directory, reset_config, is_verbose_output=False):
-    global verbose_output
-    verbose_output = is_verbose_output
-    if verbose_output:
-        lgr.setLevel(logging.DEBUG)
+    _set_global_verbosity_level(is_verbose_output)
 
     if not reset_config and os.path.exists(
             os.path.join(target_directory, CONFIG_FILE_NAME)):
@@ -88,6 +89,7 @@ def init(target_directory, reset_config, is_verbose_output=False):
 
     provider_dir = os.path.dirname(os.path.realpath(__file__))
     files_path = os.path.join(provider_dir, CONFIG_FILE_NAME)
+
     lgr.debug('copying provider files from {0} to {1}'
               .format(files_path, target_directory))
     shutil.copy(files_path, target_directory)
@@ -96,37 +98,47 @@ def init(target_directory, reset_config, is_verbose_output=False):
 
 def bootstrap(config_path=None, is_verbose_output=False,
               bootstrap_using_script=True):
-    global verbose_output
-    verbose_output = is_verbose_output
-    if verbose_output:
-        lgr.setLevel(logging.DEBUG)
+    _set_global_verbosity_level(is_verbose_output)
 
-    config = _read_config(config_path)
+    provider_config = _read_config(config_path)
 
-    connector = OpenStackConnector(config)
+    connector = OpenStackConnector(provider_config)
     network_creator = OpenStackNetworkCreator(connector)
     subnet_creator = OpenStackSubnetCreator(connector)
     router_creator = OpenStackRouterCreator(connector)
     floating_ip_creator = OpenStackFloatingIpCreator(connector)
     keypair_creator = OpenStackKeypairCreator(connector)
     server_creator = OpenStackServerCreator(connector)
-    if config['networking']['neutron_supported_region']:
+    if provider_config['networking']['neutron_supported_region']:
         sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
     else:
         sg_creator = OpenStackNovaSecurityGroupCreator(connector)
     bootstrapper = CosmoOnOpenStackBootstrapper(
-        config, network_creator, subnet_creator, router_creator,
+        provider_config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator)
     mgmt_ip = bootstrapper.do(bootstrap_using_script)
     return mgmt_ip
-    # return '1.1.1.1'
 
 
 def teardown(management_ip, is_verbose_output=False):
+    _set_global_verbosity_level(is_verbose_output)
+
+    lgr.debug('NOT YET IMPLEMENTED')
     raise RuntimeError('NOT YET IMPLEMENTED')
 
 
+def _set_global_verbosity_level(is_verbose_output=False):
+    # we need both lgr.setLevel and the verbose_output parameter
+    # since not all output is generated at the logger level.
+    # verbose_output can help us control that.
+    global verbose_output
+    verbose_output = is_verbose_output
+    if verbose_output:
+        lgr.setLevel(logging.DEBUG)
+
+
 def _read_config(config_file_path):
+
     if not config_file_path:
         config_file_path = CONFIG_FILE_NAME
     defaults_config_file_path = os.path.join(
@@ -142,11 +154,17 @@ def _read_config(config_file_path):
         raise ValueError('Missing the configuration file; expected to find '
                          'it at {0}'.format(config_file_path))
 
+    lgr.debug('reading provider config files')
     with open(config_file_path, 'r') as config_file, \
             open(defaults_config_file_path, 'r') as defaults_config_file:
+
+        lgr.debug('safe loading user config')
         user_config = yaml.safe_load(config_file.read())
+
+        lgr.debug('safe loading default config')
         defaults_config = yaml.safe_load(defaults_config_file.read())
 
+    lgr.debug('merging configs')
     merged_config = _deep_merge_dictionaries(user_config, defaults_config) \
         if user_config else defaults_config
     return merged_config
@@ -165,13 +183,10 @@ def _deep_merge_dictionaries(overriding_dict, overridden_dict):
     return merged_dict
 
 
-def _output(level, message):
-    if level >= logging.INFO or verbose_output:
-        print message
-
-
 def _mkdir_p(path):
     try:
+        lgr.debug('creating dir {0}'
+                  .format(path))
         os.makedirs(path)
     except OSError, exc:
         if exc.errno == errno.EEXIST and os.path.isdir(path):
@@ -182,10 +197,10 @@ def _mkdir_p(path):
 class CosmoOnOpenStackBootstrapper(object):
     """ Bootstraps Cosmo on OpenStack """
 
-    def __init__(self, config, network_creator, subnet_creator,
+    def __init__(self, provider_config, network_creator, subnet_creator,
                  router_creator, sg_creator, floating_ip_creator,
                  keypair_creator, server_creator):
-        self.config = config
+        self.config = provider_config
         self.network_creator = network_creator
         self.subnet_creator = subnet_creator
         self.router_creator = router_creator
@@ -361,7 +376,7 @@ class CosmoOnOpenStackBootstrapper(object):
         management_server_config = compute_config['management_server']
         mgr_kpconf = compute_config['management_server']['management_keypair']
 
-        lgr.debug('Creating ssh channel to machine...')
+        lgr.debug('creating ssh channel to machine...')
         ssh = self._create_ssh_channel_with_mgmt(
             mgmt_ip,
             self._get_private_key_path_from_keypair_config(
@@ -407,6 +422,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 self._unpack(
                     cosmo_config['cloudify_packages_path'])
 
+                lgr.debug('verifying verbosity for installation process')
                 v = self.verbose_output
                 self.verbose_output = True
 
@@ -417,6 +433,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 self._run('sudo %s/cloudify3-bootstrap.sh' %
                           cosmo_config['cloudify_package_path'])
 
+                lgr.debug('setting verbosity to previous state')
                 self.verbose_output = v
         else:
             try:
@@ -569,9 +586,9 @@ class OpenStackLogicError(RuntimeError):
 
 class CreateOrEnsureExists(object):
 
-    def create_or_ensure_exists(self, config, name, *args, **kw):
+    def create_or_ensure_exists(self, provider_config, name, *args, **kw):
         # config hash is only used for 'externally_provisioned' attribute
-        if EP_FLAG in config and config[EP_FLAG]:
+        if EP_FLAG in provider_config and provider_config[EP_FLAG]:
             method = 'ensure_exists'
         else:
             method = 'check_and_create'
@@ -894,15 +911,16 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
 
 class OpenStackConnector(object):
     # TODO: maybe lazy?
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, provider_config):
+        self.config = provider_config
         self.keystone_client = keystone_client.Client(
             **self.config['keystone'])
 
         if self.config['networking']['neutron_supported_region']:
             self.neutron_client = \
                 neutron_client.Client('2.0',
-                                      endpoint_url=config['networking']
+                                      endpoint_url=provider_config
+                                      ['networking']
                                       ['neutron_url'],
                                       token=self.keystone_client.auth_token)
             self.neutron_client.format = 'json'
