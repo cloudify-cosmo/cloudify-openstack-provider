@@ -38,6 +38,11 @@ import logging
 import logging.config
 import config
 
+# Validator
+from IPy import IP
+from jsonschema import ValidationError, Draft4Validator
+from schemas import OPENSTACK_SCHEMA
+
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
@@ -101,6 +106,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
     _set_global_verbosity_level(is_verbose_output)
 
     provider_config = _read_config(config_path)
+    _validate_config(provider_config)
 
     connector = OpenStackConnector(provider_config)
     network_creator = OpenStackNetworkCreator(connector)
@@ -192,6 +198,52 @@ def _mkdir_p(path):
         if exc.errno == errno.EEXIST and os.path.isdir(path):
             return
         raise
+
+
+def _validate_config(provider_config, schema=OPENSTACK_SCHEMA):
+    global validated
+    validated = True
+    verifier = OpenStackConfigFileValidator()
+
+    lgr.info('validating provider configuration file...')
+    verifier._validate_cidr('networking.subnet.cidr',
+                            provider_config['networking']
+                            ['subnet']['cidr'])
+    verifier._validate_cidr('networking.management_security_group.cidr',
+                            provider_config['networking']
+                            ['management_security_group']['cidr'])
+    verifier._validate_schema(provider_config, schema)
+
+    if validated:
+        lgr.info('provider configuration file validated successfully')
+    else:
+        lgr.error('provider configuration validation failed!')
+        sys.exit(1)
+
+
+class OpenStackConfigFileValidator:
+
+    def _validate_schema(self, provider_config, schema):
+        global validated
+        v = Draft4Validator(schema)
+        if v.iter_errors(provider_config):
+            errors = ';\n'.join('config file validation error found at key:'
+                                ' %s, %s' % ('.'.join(e.path), e.message)
+                                for e in v.iter_errors(provider_config))
+        try:
+            v.validate(provider_config)
+        except ValidationError:
+            validated = False
+            lgr.error('{0}'.format(errors))
+
+    def _validate_cidr(self, field, cidr):
+        global validated
+        try:
+            IP(cidr)
+        except ValueError as e:
+            validated = False
+            lgr.error('config file validation error found at key:'
+                      ' {0}. {1}'.format(field, e.message))
 
 
 class CosmoOnOpenStackBootstrapper(object):
