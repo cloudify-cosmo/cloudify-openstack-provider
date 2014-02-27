@@ -595,6 +595,8 @@ class CosmoOnOpenStackBootstrapper(object):
             shutil.rmtree(tempdir)
 
     def _make_keystone_file(self, tempdir, keystone_config):
+        # put default region in keystone_config file
+        keystone_config['region'] = self.config['compute']['region']
         keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
         with open(keystone_file_path, 'w') as f:
             json.dump(keystone_config, f)
