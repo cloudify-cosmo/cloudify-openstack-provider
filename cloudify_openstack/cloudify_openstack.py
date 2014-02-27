@@ -268,8 +268,11 @@ class CosmoOnOpenStackBootstrapper(object):
         self.verbose_output = verbose_output
 
     def do(self, provider_config, bootstrap_using_script):
+
         mgmt_ip = self._create_topology()
-        installed = self._bootstrap_manager(mgmt_ip, bootstrap_using_script)
+        if mgmt_ip is not None:
+            installed = self._bootstrap_manager(mgmt_ip,
+                                                bootstrap_using_script)
         if mgmt_ip and installed:
             return mgmt_ip
         else:
@@ -441,11 +444,14 @@ class CosmoOnOpenStackBootstrapper(object):
         mgr_kpconf = compute_config['management_server']['management_keypair']
 
         lgr.debug('creating ssh channel to machine...')
-        ssh = self._create_ssh_channel_with_mgmt(
-            mgmt_ip,
-            self._get_private_key_path_from_keypair_config(
-                management_server_config['management_keypair']),
-            management_server_config['user_on_management'])
+        try:
+            ssh = self._create_ssh_channel_with_mgmt(
+                mgmt_ip,
+                self._get_private_key_path_from_keypair_config(
+                    management_server_config['management_keypair']),
+                management_server_config['user_on_management'])
+        except:
+            return False
 
         env.user = management_server_config['user_on_management']
         env.warn_only = 0
@@ -599,7 +605,7 @@ class CosmoOnOpenStackBootstrapper(object):
                     "SSH connection to {0} failed. Waiting {1} seconds "
                     "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
                 time.sleep(SSH_CONNECT_SLEEP)
-        raise RuntimeError('Failed to ssh connect to management server')
+        lgr.error('Failed to ssh connect to management server')
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
                                keystone_config, agents_key_path):
