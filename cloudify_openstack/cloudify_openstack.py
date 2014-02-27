@@ -131,6 +131,25 @@ def bootstrap(config_path=None, is_verbose_output=False,
 def teardown(management_ip, is_verbose_output=False):
     _set_global_verbosity_level(is_verbose_output)
 
+    # provider_config = _read_config(config_path)
+
+    # connector = OpenStackConnector(provider_config)
+    # network_killer = OpenStackNetworkKiller(connector)
+    # subnet_killer = OpenStackSubnetKiller(connector)
+    # router_killer = OpenStackRouterKiller(connector)
+    # floating_ip_killer = OpenStackFloatingIpKiller(connector)
+    # keypair_killer = OpenStackKeypairKiller(connector)
+    # server_killer = OpenStackServerKiller(connector)
+    # if provider_config['networking']['neutron_supported_region']:
+    #     sg_killer = OpenStackNeutronSecurityGroupKiller(connector)
+    # else:
+    #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
+    # killer = CosmoOnOpenStackKiller(
+    #     provider_config, network_killer, subnet_killer, router_killer,
+    #     sg_killer, floating_ip_killer, keypair_killer, server_killer,
+    #     server_killer)
+    # killer.do(provider_config, management_ip)
+
     lgr.debug('NOT YET IMPLEMENTED')
     raise RuntimeError('NOT YET IMPLEMENTED')
 
