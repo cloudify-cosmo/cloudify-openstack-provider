@@ -148,7 +148,8 @@ def teardown(management_ip, is_verbose_output=False):
     #     provider_config, network_killer, subnet_killer, router_killer,
     #     sg_killer, floating_ip_killer, keypair_killer, server_killer,
     #     server_killer)
-    # killer.do(provider_config, management_ip)
+    # mgmt_ip = killer.do(provider_config)
+    # return mgmt_ip
 
     lgr.debug('NOT YET IMPLEMENTED')
     raise RuntimeError('NOT YET IMPLEMENTED')
@@ -514,16 +515,26 @@ class CosmoOnOpenStackBootstrapper(object):
                     self._download_package(
                         cosmo_config['cloudify_packages_path'],
                         cosmo_config['cloudify_package_url'])
+                except:
+                    lgr.error('failed to download cloudify packages. '
+                              'please ensure packages exist in their '
+                              'configured locations in the config file')
+                    return False
 
-                    lgr.info('unpacking cloudify packages...')
+                lgr.info('unpacking cloudify packages...')
+                try:
                     self._unpack(
                         cosmo_config['cloudify_packages_path'])
 
                     lgr.debug('verifying verbosity for installation process')
                     v = self.verbose_output
                     self.verbose_output = True
+                except:
+                    lgr.error('failed to unpack cloudify packages')
+                    return False
 
-                    lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
+                lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
+                try:
                     self._run('sudo %s/cloudify3-components-bootstrap.sh' %
                               cosmo_config['cloudify_components_package_path'])
 
@@ -602,8 +613,12 @@ class CosmoOnOpenStackBootstrapper(object):
                 self._exec_command_on_manager(ssh, run_script_command)
 
                 lgr.debug('rebuilding cosmo on manager')
+            except:
+                lgr.error('failed to install manager using the script')
+                return False
             finally:
                 ssh.close()
+            return True
 
     def _create_ssh_channel_with_mgmt(self, mgmt_ip, management_key_path,
                                       user_on_management):
@@ -1024,12 +1039,12 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
             self._wait_for_server_to_terminate(server)
 
     def _wait_for_server_to_terminate(self, server):
-        timeout = 100
+        timeout = 20
         while server.status == "ACTIVE":
-            timeout -= 5
+            timeout -= 2
             if timeout <= 0:
                 raise RuntimeError('Server failed to terminate in time')
-            time.sleep(5)
+            time.sleep(2)
             try:
                 server = self.nova_client.servers.get(server.id)
             except RuntimeError:
