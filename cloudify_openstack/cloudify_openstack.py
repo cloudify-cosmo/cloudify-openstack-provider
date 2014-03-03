@@ -115,19 +115,41 @@ def bootstrap(config_path=None, is_verbose_output=False,
     floating_ip_creator = OpenStackFloatingIpCreator(connector)
     keypair_creator = OpenStackKeypairCreator(connector)
     server_creator = OpenStackServerCreator(connector)
+    server_killer = OpenStackServerKiller(connector)
     if provider_config['networking']['neutron_supported_region']:
         sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
     else:
         sg_creator = OpenStackNovaSecurityGroupCreator(connector)
     bootstrapper = CosmoOnOpenStackBootstrapper(
         provider_config, network_creator, subnet_creator, router_creator,
-        sg_creator, floating_ip_creator, keypair_creator, server_creator)
-    mgmt_ip = bootstrapper.do(bootstrap_using_script)
+        sg_creator, floating_ip_creator, keypair_creator, server_creator,
+        server_killer)
+    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script)
     return mgmt_ip
 
 
 def teardown(management_ip, is_verbose_output=False):
     _set_global_verbosity_level(is_verbose_output)
+
+    # provider_config = _read_config(config_path)
+
+    # connector = OpenStackConnector(provider_config)
+    # network_killer = OpenStackNetworkKiller(connector)
+    # subnet_killer = OpenStackSubnetKiller(connector)
+    # router_killer = OpenStackRouterKiller(connector)
+    # floating_ip_killer = OpenStackFloatingIpKiller(connector)
+    # keypair_killer = OpenStackKeypairKiller(connector)
+    # server_killer = OpenStackServerKiller(connector)
+    # if provider_config['networking']['neutron_supported_region']:
+    #     sg_killer = OpenStackNeutronSecurityGroupKiller(connector)
+    # else:
+    #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
+    # killer = CosmoOnOpenStackKiller(
+    #     provider_config, network_killer, subnet_killer, router_killer,
+    #     sg_killer, floating_ip_killer, keypair_killer, server_killer,
+    #     server_killer)
+    # mgmt_ip = killer.do(provider_config)
+    # return mgmt_ip
 
     lgr.debug('NOT YET IMPLEMENTED')
     raise RuntimeError('NOT YET IMPLEMENTED')
@@ -251,7 +273,7 @@ class CosmoOnOpenStackBootstrapper(object):
 
     def __init__(self, provider_config, network_creator, subnet_creator,
                  router_creator, sg_creator, floating_ip_creator,
-                 keypair_creator, server_creator):
+                 keypair_creator, server_creator, server_killer):
         self.config = provider_config
         self.network_creator = network_creator
         self.subnet_creator = subnet_creator
@@ -260,14 +282,27 @@ class CosmoOnOpenStackBootstrapper(object):
         self.floating_ip_creator = floating_ip_creator
         self.keypair_creator = keypair_creator
         self.server_creator = server_creator
+        self.server_killer = server_killer
 
         global verbose_output
         self.verbose_output = verbose_output
 
-    def do(self, bootstrap_using_script):
+    def do(self, provider_config, bootstrap_using_script):
+
         mgmt_ip = self._create_topology()
-        self._bootstrap_manager(mgmt_ip, bootstrap_using_script)
-        return mgmt_ip
+        if mgmt_ip is not None:
+            installed = self._bootstrap_manager(mgmt_ip,
+                                                bootstrap_using_script)
+        if mgmt_ip and installed:
+            return mgmt_ip
+        else:
+            lgr.info('tearing down manager server due to bootstrap failure')
+            servers = self.server_killer.list_objects_with_name(
+                provider_config['compute']
+                               ['management_server']['instance']['name'])
+            self.server_killer.kill(servers)
+            lgr.info('server terminated')
+            sys.exit(1)
 
     def _create_topology(self):
         compute_config = self.config['compute']
@@ -429,11 +464,14 @@ class CosmoOnOpenStackBootstrapper(object):
         mgr_kpconf = compute_config['management_server']['management_keypair']
 
         lgr.debug('creating ssh channel to machine...')
-        ssh = self._create_ssh_channel_with_mgmt(
-            mgmt_ip,
-            self._get_private_key_path_from_keypair_config(
-                management_server_config['management_keypair']),
-            management_server_config['user_on_management'])
+        try:
+            ssh = self._create_ssh_channel_with_mgmt(
+                mgmt_ip,
+                self._get_private_key_path_from_keypair_config(
+                    management_server_config['management_keypair']),
+                management_server_config['user_on_management'])
+        except:
+            return False
 
         env.user = management_server_config['user_on_management']
         env.warn_only = 0
@@ -451,42 +489,64 @@ class CosmoOnOpenStackBootstrapper(object):
 
         if not bootstrap_using_script:
 
-            self._copy_files_to_manager(
-                ssh,
-                management_server_config['userhome_on_management'],
-                self.config['keystone'],
-                self._get_private_key_path_from_keypair_config(
-                    compute_config['agent_servers']['agents_keypair']))
+            try:
+                self._copy_files_to_manager(
+                    ssh,
+                    management_server_config['userhome_on_management'],
+                    self.config['keystone'],
+                    self._get_private_key_path_from_keypair_config(
+                        compute_config['agent_servers']['agents_keypair']))
+            except:
+                lgr.error('failed to copy keystone files')
+                return False
 
-            with settings(host_string=mgmt_ip), hide('running'):
+            with settings(host_string=mgmt_ip), hide('running',
+                                                     'stderr',
+                                                     'aborts',
+                                                     'warnings'):
 
                 lgr.info('downloading cloudify components package...')
-                self._download_package(
-                    cosmo_config['cloudify_packages_path'],
-                    cosmo_config['cloudify_components_package_url'])
+                try:
+                    self._download_package(
+                        cosmo_config['cloudify_packages_path'],
+                        cosmo_config['cloudify_components_package_url'])
 
-                lgr.info('downloading cloudify package...')
-                self._download_package(
-                    cosmo_config['cloudify_packages_path'],
-                    cosmo_config['cloudify_package_url'])
+                    lgr.info('downloading cloudify package...')
+                    self._download_package(
+                        cosmo_config['cloudify_packages_path'],
+                        cosmo_config['cloudify_package_url'])
+                except:
+                    lgr.error('failed to download cloudify packages. '
+                              'please ensure packages exist in their '
+                              'configured locations in the config file')
+                    return False
 
                 lgr.info('unpacking cloudify packages...')
-                self._unpack(
-                    cosmo_config['cloudify_packages_path'])
+                try:
+                    self._unpack(
+                        cosmo_config['cloudify_packages_path'])
 
-                lgr.debug('verifying verbosity for installation process')
-                v = self.verbose_output
-                self.verbose_output = True
+                    lgr.debug('verifying verbosity for installation process')
+                    v = self.verbose_output
+                    self.verbose_output = True
+                except:
+                    lgr.error('failed to unpack cloudify packages')
+                    return False
 
                 lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
-                self._run('sudo %s/cloudify3-components-bootstrap.sh' %
-                          cosmo_config['cloudify_components_package_path'])
+                try:
+                    self._run('sudo %s/cloudify3-components-bootstrap.sh' %
+                              cosmo_config['cloudify_components_package_path'])
 
-                self._run('sudo %s/cloudify3-bootstrap.sh' %
-                          cosmo_config['cloudify_package_path'])
+                    self._run('sudo %s/cloudify3-bootstrap.sh' %
+                              cosmo_config['cloudify_package_path'])
+                except:
+                    lgr.error('failed to install manager')
+                    return False
 
                 lgr.debug('setting verbosity to previous state')
                 self.verbose_output = v
+                return True
         else:
             try:
                 self._copy_files_to_manager(
@@ -553,8 +613,12 @@ class CosmoOnOpenStackBootstrapper(object):
                 self._exec_command_on_manager(ssh, run_script_command)
 
                 lgr.debug('rebuilding cosmo on manager')
+            except:
+                lgr.error('failed to install manager using the script')
+                return False
             finally:
                 ssh.close()
+            return True
 
     def _create_ssh_channel_with_mgmt(self, mgmt_ip, management_key_path,
                                       user_on_management):
@@ -575,7 +639,7 @@ class CosmoOnOpenStackBootstrapper(object):
                     "SSH connection to {0} failed. Waiting {1} seconds "
                     "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
                 time.sleep(SSH_CONNECT_SLEEP)
-        raise RuntimeError('Failed to ssh connect to management server')
+        lgr.error('Failed to ssh connect to management server')
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
                                keystone_config, agents_key_path):
@@ -595,8 +659,6 @@ class CosmoOnOpenStackBootstrapper(object):
             shutil.rmtree(tempdir)
 
     def _make_keystone_file(self, tempdir, keystone_config):
-        # put default region in keystone_config file
-        keystone_config['region'] = self.config['compute']['region']
         keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
         with open(keystone_file_path, 'w') as f:
             json.dump(keystone_config, f)
@@ -961,6 +1023,32 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
             server = self.nova_client.servers.get(server.id)
 
         return server
+
+
+class OpenStackServerKiller(CreateOrEnsureExistsNova):
+    WHAT = 'server'
+
+    def list_objects_with_name(self, name):
+        servers = self.nova_client.servers.list(True, {'name': name})
+        return servers
+
+    def kill(self, servers):
+        for server in servers:
+            lgr.debug('killing server: {0}'.format(server.name))
+            server.delete()
+            self._wait_for_server_to_terminate(server)
+
+    def _wait_for_server_to_terminate(self, server):
+        timeout = 20
+        while server.status == "ACTIVE":
+            timeout -= 2
+            if timeout <= 0:
+                raise RuntimeError('Server failed to terminate in time')
+            time.sleep(2)
+            try:
+                server = self.nova_client.servers.get(server.id)
+            except RuntimeError:
+                pass
 
 
 class OpenStackConnector(object):
