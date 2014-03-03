@@ -570,7 +570,7 @@ class CosmoOnOpenStackBootstrapper(object):
                                                       'python-pip'
                                                       + SHELL_PIPE_TO_LOGGER)
                 self._exec_install_command_on_manager(ssh, 'pip install -q '
-                                                           'retrying '
+                                                           'retrying requests '
                                                            'timeout-decorator')
 
                 # use open sdk java 7
