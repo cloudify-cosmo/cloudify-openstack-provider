@@ -495,7 +495,8 @@ class CosmoOnOpenStackBootstrapper(object):
                     management_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']))
+                        compute_config['agent_servers']['agents_keypair']),
+                    self.config['networking'])
             except:
                 lgr.error('failed to copy keystone files')
                 return False
@@ -554,7 +555,8 @@ class CosmoOnOpenStackBootstrapper(object):
                     management_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']))
+                        compute_config['agent_servers']['agents_keypair']),
+                    self.config['networking'])
 
                 lgr.debug('Installing required packages'
                           ' on manager')
@@ -649,8 +651,9 @@ class CosmoOnOpenStackBootstrapper(object):
         lgr.error('Failed to ssh connect to management server')
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
-                               keystone_config, agents_key_path):
-        lgr.info('uploading keystone files to manager')
+                               keystone_config, agents_key_path,
+                               networking):
+        lgr.info('uploading keystone and neutron files to manager')
         scp = SCPClient(ssh.get_transport())
 
         tempdir = tempfile.mkdtemp()
@@ -661,7 +664,11 @@ class CosmoOnOpenStackBootstrapper(object):
                                                           keystone_config)
             scp.put(keystone_file_path, userhome_on_management,
                     preserve_times=True)
-
+            if networking['neutron_supported_region']:
+                neutron_file_path = self._make_neutron_file(tempdir,
+                                                            networking)
+                scp.put(neutron_file_path, userhome_on_management,
+                        preserve_times=True)
         finally:
             shutil.rmtree(tempdir)
 
@@ -672,6 +679,12 @@ class CosmoOnOpenStackBootstrapper(object):
         with open(keystone_file_path, 'w') as f:
             json.dump(keystone_config, f)
         return keystone_file_path
+
+    def _make_neutron_file(self, tempdir, networking):
+        neutron_file_path = os.path.join(tempdir, 'neutron_config.json')
+        with open(neutron_file_path, 'w') as f:
+            json.dump({'url': networking['neutron_url']}, f)
+        return neutron_file_path
 
     def _exec_install_command_on_manager(self, ssh, install_command):
         command = 'DEBIAN_FRONTEND=noninteractive sudo -E {0}'.format(
