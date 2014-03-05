@@ -51,8 +51,10 @@ import neutronclient.neutron.client as neutron_client
 
 EP_FLAG = 'externally_provisioned'
 
-EXTERNAL_PORTS = (22, 8100)  # SSH, REST service
-INTERNAL_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
+EXTERNAL_MGMT_PORTS = (22, 8100)  # SSH, REST service
+INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
+
+INTERNAL_AGENT_PORTS = (22,)
 
 SSH_CONNECT_RETRIES = 12
 SSH_CONNECT_SLEEP = 5
@@ -350,13 +352,19 @@ class CosmoOnOpenStackBootstrapper(object):
         # instances -> manager communication
         msgconf = self.config['networking']['management_security_group']
         sg_rules = \
-            [{'port': p, 'group_id': asg_id} for p in INTERNAL_PORTS] + \
-            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_PORTS]
+            [{'port': p, 'group_id': asg_id} for p in INTERNAL_MGMT_PORTS] + \
+            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_MGMT_PORTS]
         msg_id = self.sg_creator.create_or_ensure_exists(
             msgconf,
             msgconf['name'],
             'Cosmo Manager',
             sg_rules)
+
+        # Add rules to agent security group. (Happens here because we need
+        # the management security group id)
+        asg_rules = \
+            [{'port': p, 'group_id': msg_id} for p in INTERNAL_AGENT_PORTS]
+        self.sg_creator.add_rules(asg_rules)
 
         # Keypairs setup
         mgr_kpconf = compute_config['management_server']['management_keypair']
@@ -895,11 +903,14 @@ class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
                 'description': description,
             }
         })['security_group']
+        self.add_rules(sg['id'], rules)
+        return sg['id']
 
+    def add_rules(self, sg_id, rules):
         for rule in rules:
             self.neutron_client.create_security_group_rule({
                 'security_group_rule': {
-                    'security_group_id': sg['id'],
+                    'security_group_id': sg_id,
                     'direction': 'ingress',
                     'protocol': 'tcp',
                     'port_range_min': rule['port'],
@@ -908,9 +919,6 @@ class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
                     'remote_group_id': rule.get('group_id'),
                 }
             })
-
-        return sg['id']
-
 
 class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
     WHAT = 'keypair'
