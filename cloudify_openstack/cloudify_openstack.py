@@ -102,7 +102,7 @@ def init(target_directory, reset_config, is_verbose_output=False):
 
 
 def bootstrap(config_path=None, is_verbose_output=False,
-              bootstrap_using_script=True):
+              bootstrap_using_script=True, keep_up=False):
     _set_global_verbosity_level(is_verbose_output)
 
     provider_config = _read_config(config_path)
@@ -124,7 +124,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
         provider_config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator,
         server_killer)
-    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script)
+    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script, keep_up)
     return mgmt_ip
 
 
@@ -287,7 +287,7 @@ class CosmoOnOpenStackBootstrapper(object):
         global verbose_output
         self.verbose_output = verbose_output
 
-    def do(self, provider_config, bootstrap_using_script):
+    def do(self, provider_config, bootstrap_using_script, keep_up):
 
         mgmt_ip = self._create_topology()
         if mgmt_ip is not None:
@@ -296,13 +296,18 @@ class CosmoOnOpenStackBootstrapper(object):
         if mgmt_ip and installed:
             return mgmt_ip
         else:
-            lgr.info('tearing down manager server due to bootstrap failure')
-            servers = self.server_killer.list_objects_with_name(
-                provider_config['compute']
-                               ['management_server']['instance']['name'])
-            self.server_killer.kill(servers)
-            lgr.info('server terminated')
-            sys.exit(1)
+            if keep_up:
+                lgr.info('manager server will remain up')
+                sys.exit(1)
+            else:
+                lgr.info('tearing down manager server '
+                         'due to bootstrap failure')
+                servers = self.server_killer.list_objects_with_name(
+                    provider_config['compute']
+                                   ['management_server']['instance']['name'])
+                self.server_killer.kill(servers)
+                lgr.info('server terminated')
+                sys.exit(1)
 
     def _create_topology(self):
         compute_config = self.config['compute']
