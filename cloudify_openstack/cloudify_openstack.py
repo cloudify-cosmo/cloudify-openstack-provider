@@ -131,7 +131,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
 def teardown(management_ip, is_verbose_output=False):
     _set_global_verbosity_level(is_verbose_output)
 
-    # provider_config = _read_config(config_path)
+    provider_config = _read_config(config_path)
 
     # connector = OpenStackConnector(provider_config)
     # network_killer = OpenStackNetworkKiller(connector)
