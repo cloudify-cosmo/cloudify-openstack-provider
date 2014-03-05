@@ -364,9 +364,10 @@ class CosmoOnOpenStackBootstrapper(object):
 
         # Add rules to agent security group. (Happens here because we need
         # the management security group id)
-        asg_rules = \
-            [{'port': p, 'group_id': msg_id} for p in INTERNAL_AGENT_PORTS]
-        self.sg_creator.add_rules(asg_id, asg_rules)
+        asg_rules = [{'port': port, 'group_id': msg_id}
+                     for port in INTERNAL_AGENT_PORTS]
+        if EP_FLAG not in asgconf or not asgconf[EP_FLAG]:
+            self.sg_creator.add_rules(asg_id, asg_rules)
 
         # Keypairs setup
         mgr_kpconf = compute_config['management_server']['management_keypair']
@@ -922,6 +923,7 @@ class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
                     'remote_group_id': rule.get('group_id'),
                 }
             })
+
 
 class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
     WHAT = 'keypair'
