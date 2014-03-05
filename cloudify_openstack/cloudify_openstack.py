@@ -1038,11 +1038,9 @@ class CosmoOnOpenStackKiller(object):
         self.verbose_output = verbose_output
 
     def do(self):
-
         self._kill_topology()
 
     def _kill_topology(self):
-
         lgr.debug('retrieving server object for ip: {0}'.format(self.mgmt_ip))
         server = self.server_killer.list_objects_by_ip(self.mgmt_ip)
         if server is not None:
