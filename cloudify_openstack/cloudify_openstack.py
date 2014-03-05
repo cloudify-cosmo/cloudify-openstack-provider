@@ -561,6 +561,13 @@ class CosmoOnOpenStackBootstrapper(object):
                 self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
                                                    '$(cat /etc/hostname)" | '
                                                    'sudo tee -a /etc/hosts')
+                # note we call 'apt-get update' twice. there seems to be
+                # an issue an certain openstack environments where the first
+                # call seems to be using a different set of servers to do the
+                # update. the second calls seems to be after a certain
+                # mysterious cache was invalidated.
+                self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
+                                                   + SHELL_PIPE_TO_LOGGER)
                 self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
                                                    + SHELL_PIPE_TO_LOGGER)
                 self._exec_install_command_on_manager(ssh,
@@ -1037,8 +1044,9 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
     def kill(self, servers):
         for server in servers:
             lgr.debug('killing server: {0}'.format(server.name))
-            server.delete()
-            self._wait_for_server_to_terminate(server)
+            # remove this upon merge to develop
+            # server.delete()
+            # self._wait_for_server_to_terminate(server)
 
     def _wait_for_server_to_terminate(self, server):
         timeout = 20
