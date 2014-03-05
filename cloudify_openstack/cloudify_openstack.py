@@ -366,7 +366,7 @@ class CosmoOnOpenStackBootstrapper(object):
         # the management security group id)
         asg_rules = \
             [{'port': p, 'group_id': msg_id} for p in INTERNAL_AGENT_PORTS]
-        self.sg_creator.add_rules(asg_rules)
+        self.sg_creator.add_rules(asg_id, asg_rules)
 
         # Keypairs setup
         mgr_kpconf = compute_config['management_server']['management_keypair']
