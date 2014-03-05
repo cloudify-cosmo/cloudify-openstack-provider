@@ -323,7 +323,9 @@ class CosmoOnOpenStackBootstrapper(object):
                 sconf,
                 sconf['name'],
                 sconf['ip_version'],
-                sconf['cidr'], net_id)
+                sconf['cidr'],
+                sconf['dns_nameservers'],
+                net_id)
 
             enconf = self.config['networking']['ext_network']
             enet_id = self.network_creator.create_or_ensure_exists(
@@ -819,12 +821,13 @@ class OpenStackSubnetCreator(CreateOrEnsureExistsNeutron):
     def list_objects_with_name(self, name):
         return self.neutron_client.list_subnets(name=name)['subnets']
 
-    def create(self, name, ip_version, cidr, net_id):
+    def create(self, name, ip_version, cidr, dns_nameservers, net_id):
         ret = self.neutron_client.create_subnet({
             'subnet': {
                 'name': name,
                 'ip_version': ip_version,
                 'cidr': cidr,
+                'dns_nameservers': dns_nameservers,
                 'network_id': net_id
             }
         })

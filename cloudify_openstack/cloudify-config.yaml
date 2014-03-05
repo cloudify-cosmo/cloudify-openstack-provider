@@ -15,6 +15,7 @@ keystone:
 #        name: cloudify-admin-network-subnet
 #        ip_version: 4
 #        cidr: 10.67.79.0/24
+#        dns_nameservers = []
 #    ext_network:
 #        externally_provisioned: True #For now, this must be 'externally_provisioned': True
 #        name: Ext-Net
