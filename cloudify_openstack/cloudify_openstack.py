@@ -133,28 +133,23 @@ def bootstrap(config_path=None, is_verbose_output=False,
 def teardown(management_ip, is_verbose_output=False):
     _set_global_verbosity_level(is_verbose_output)
 
-    # provider_config = _read_config(config_path)
+    lgr.info('NOTE: currently only instance teardown is implemented!')
+    provider_config = _read_config(config_file_path=None)
 
-    # connector = OpenStackConnector(provider_config)
+    connector = OpenStackConnector(provider_config)
     # network_killer = OpenStackNetworkKiller(connector)
     # subnet_killer = OpenStackSubnetKiller(connector)
     # router_killer = OpenStackRouterKiller(connector)
     # floating_ip_killer = OpenStackFloatingIpKiller(connector)
     # keypair_killer = OpenStackKeypairKiller(connector)
-    # server_killer = OpenStackServerKiller(connector)
+    server_killer = OpenStackServerKiller(connector)
     # if provider_config['networking']['neutron_supported_region']:
     #     sg_killer = OpenStackNeutronSecurityGroupKiller(connector)
     # else:
     #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
-    # killer = CosmoOnOpenStackKiller(
-    #     provider_config, network_killer, subnet_killer, router_killer,
-    #     sg_killer, floating_ip_killer, keypair_killer, server_killer,
-    #     server_killer)
-    # mgmt_ip = killer.do(provider_config)
-    # return mgmt_ip
-
-    lgr.debug('NOT YET IMPLEMENTED')
-    raise RuntimeError('NOT YET IMPLEMENTED')
+    killer = CosmoOnOpenStackKiller(
+        provider_config, management_ip, server_killer)
+    killer.do()
 
 
 def _set_global_verbosity_level(is_verbose_output=False):
@@ -299,11 +294,15 @@ class CosmoOnOpenStackBootstrapper(object):
             return mgmt_ip
         else:
             lgr.info('tearing down manager server due to bootstrap failure')
-            servers = self.server_killer.list_objects_with_name(
-                provider_config['compute']
-                               ['management_server']['instance']['name'])
-            self.server_killer.kill(servers)
-            lgr.info('server terminated')
+            # servers = self.server_killer.list_objects_with_name(
+                # provider_config['compute']
+                               # ['management_server']['instance']['name'])
+            server = self.server_killer.list_objects_by_ip(mgmt_ip)
+            if server is not None:
+                self.server_killer.kill(server)
+                lgr.info('server terminated')
+            else:
+                lgr.info('server is not up, exiting')
             sys.exit(1)
 
     def _create_topology(self):
@@ -1060,6 +1059,29 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
         return server
 
 
+class CosmoOnOpenStackKiller(object):
+    """ Kills Cosmo on OpenStack """
+
+    def __init__(self, provider_config, mgmt_ip, server_killer):
+        self.config = provider_config
+        self.mgmt_ip = mgmt_ip
+        self.server_killer = server_killer
+
+        global verbose_output
+        self.verbose_output = verbose_output
+
+    def do(self):
+        self._kill_topology()
+
+    def _kill_topology(self):
+        lgr.debug('retrieving server object for ip: {0}'.format(self.mgmt_ip))
+        server = self.server_killer.list_objects_by_ip(self.mgmt_ip)
+        if server is not None:
+            self.server_killer.kill(server)
+        else:
+            lgr.info('no servers found for ip: {0}'.format(self.mgmt_ip))
+
+
 class OpenStackServerKiller(CreateOrEnsureExistsNova):
     WHAT = 'server'
 
@@ -1067,11 +1089,16 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
         servers = self.nova_client.servers.list(True, {'name': name})
         return servers
 
-    def kill(self, servers):
+    def list_objects_by_ip(self, ip):
+        servers = self.nova_client.servers.list()
         for server in servers:
-            lgr.debug('killing server: {0}'.format(server.name))
-            server.delete()
-            self._wait_for_server_to_terminate(server)
+            if str(ip) in str(server.addresses):
+                return server
+
+    def kill(self, server):
+        lgr.debug('killing server: {0}'.format(server.name))
+        server.delete()
+        self._wait_for_server_to_terminate(server)
 
     def _wait_for_server_to_terminate(self, server):
         timeout = 20
