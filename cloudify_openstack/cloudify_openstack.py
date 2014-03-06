@@ -1070,9 +1070,8 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
     def kill(self, servers):
         for server in servers:
             lgr.debug('killing server: {0}'.format(server.name))
-            # remove this upon merge to develop
-            # server.delete()
-            # self._wait_for_server_to_terminate(server)
+            server.delete()
+            self._wait_for_server_to_terminate(server)
 
     def _wait_for_server_to_terminate(self, server):
         timeout = 20
