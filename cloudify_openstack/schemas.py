@@ -236,6 +236,12 @@ OPENSTACK_SCHEMA = {
                         },
                         "name": {
                             "type":"string",                                                    
+                        },
+                        "dns_nameservers": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

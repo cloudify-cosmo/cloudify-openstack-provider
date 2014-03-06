@@ -51,8 +51,10 @@ import neutronclient.neutron.client as neutron_client
 
 EP_FLAG = 'externally_provisioned'
 
-EXTERNAL_PORTS = (22, 8100)  # SSH, REST service
-INTERNAL_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
+EXTERNAL_MGMT_PORTS = (22, 8100)  # SSH, REST service
+INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
+
+INTERNAL_AGENT_PORTS = (22,)
 
 SSH_CONNECT_RETRIES = 12
 SSH_CONNECT_SLEEP = 5
@@ -320,7 +322,9 @@ class CosmoOnOpenStackBootstrapper(object):
                 sconf,
                 sconf['name'],
                 sconf['ip_version'],
-                sconf['cidr'], net_id)
+                sconf['cidr'],
+                sconf['dns_nameservers'],
+                net_id)
 
             enconf = self.config['networking']['ext_network']
             enet_id = self.network_creator.create_or_ensure_exists(
@@ -349,13 +353,20 @@ class CosmoOnOpenStackBootstrapper(object):
         # instances -> manager communication
         msgconf = self.config['networking']['management_security_group']
         sg_rules = \
-            [{'port': p, 'group_id': asg_id} for p in INTERNAL_PORTS] + \
-            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_PORTS]
+            [{'port': p, 'group_id': asg_id} for p in INTERNAL_MGMT_PORTS] + \
+            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_MGMT_PORTS]
         msg_id = self.sg_creator.create_or_ensure_exists(
             msgconf,
             msgconf['name'],
             'Cosmo Manager',
             sg_rules)
+
+        # Add rules to agent security group. (Happens here because we need
+        # the management security group id)
+        asg_rules = [{'port': port, 'group_id': msg_id}
+                     for port in INTERNAL_AGENT_PORTS]
+        if EP_FLAG not in asgconf or not asgconf[EP_FLAG]:
+            self.sg_creator.add_rules(asg_id, asg_rules)
 
         # Keypairs setup
         mgr_kpconf = compute_config['management_server']['management_keypair']
@@ -494,7 +505,8 @@ class CosmoOnOpenStackBootstrapper(object):
                     management_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']))
+                        compute_config['agent_servers']['agents_keypair']),
+                    self.config['networking'])
             except:
                 lgr.error('failed to copy keystone files')
                 return False
@@ -553,13 +565,21 @@ class CosmoOnOpenStackBootstrapper(object):
                     management_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']))
+                        compute_config['agent_servers']['agents_keypair']),
+                    self.config['networking'])
 
                 lgr.debug('Installing required packages'
                           ' on manager')
                 self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
                                                    '$(cat /etc/hostname)" | '
                                                    'sudo tee -a /etc/hosts')
+                # note we call 'apt-get update' twice. there seems to be
+                # an issue an certain openstack environments where the first
+                # call seems to be using a different set of servers to do the
+                # update. the second calls seems to be after a certain
+                # mysterious cache was invalidated.
+                self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
+                                                   + SHELL_PIPE_TO_LOGGER)
                 self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
                                                    + SHELL_PIPE_TO_LOGGER)
                 self._exec_install_command_on_manager(ssh,
@@ -641,8 +661,9 @@ class CosmoOnOpenStackBootstrapper(object):
         lgr.error('Failed to ssh connect to management server')
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
-                               keystone_config, agents_key_path):
-        lgr.info('uploading keystone files to manager')
+                               keystone_config, agents_key_path,
+                               networking):
+        lgr.info('uploading keystone and neutron files to manager')
         scp = SCPClient(ssh.get_transport())
 
         tempdir = tempfile.mkdtemp()
@@ -653,7 +674,11 @@ class CosmoOnOpenStackBootstrapper(object):
                                                           keystone_config)
             scp.put(keystone_file_path, userhome_on_management,
                     preserve_times=True)
-
+            if networking['neutron_supported_region']:
+                neutron_file_path = self._make_neutron_file(tempdir,
+                                                            networking)
+                scp.put(neutron_file_path, userhome_on_management,
+                        preserve_times=True)
         finally:
             shutil.rmtree(tempdir)
 
@@ -664,6 +689,12 @@ class CosmoOnOpenStackBootstrapper(object):
         with open(keystone_file_path, 'w') as f:
             json.dump(keystone_config, f)
         return keystone_file_path
+
+    def _make_neutron_file(self, tempdir, networking):
+        neutron_file_path = os.path.join(tempdir, 'neutron_config.json')
+        with open(neutron_file_path, 'w') as f:
+            json.dump({'url': networking['neutron_url']}, f)
+        return neutron_file_path
 
     def _exec_install_command_on_manager(self, ssh, install_command):
         command = 'DEBIAN_FRONTEND=noninteractive sudo -E {0}'.format(
@@ -790,12 +821,13 @@ class OpenStackSubnetCreator(CreateOrEnsureExistsNeutron):
     def list_objects_with_name(self, name):
         return self.neutron_client.list_subnets(name=name)['subnets']
 
-    def create(self, name, ip_version, cidr, net_id):
+    def create(self, name, ip_version, cidr, dns_nameservers, net_id):
         ret = self.neutron_client.create_subnet({
             'subnet': {
                 'name': name,
                 'ip_version': ip_version,
                 'cidr': cidr,
+                'dns_nameservers': dns_nameservers,
                 'network_id': net_id
             }
         })
@@ -874,11 +906,14 @@ class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
                 'description': description,
             }
         })['security_group']
+        self.add_rules(sg['id'], rules)
+        return sg['id']
 
+    def add_rules(self, sg_id, rules):
         for rule in rules:
             self.neutron_client.create_security_group_rule({
                 'security_group_rule': {
-                    'security_group_id': sg['id'],
+                    'security_group_id': sg_id,
                     'direction': 'ingress',
                     'protocol': 'tcp',
                     'port_range_min': rule['port'],
@@ -887,8 +922,6 @@ class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
                     'remote_group_id': rule.get('group_id'),
                 }
             })
-
-        return sg['id']
 
 
 class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
