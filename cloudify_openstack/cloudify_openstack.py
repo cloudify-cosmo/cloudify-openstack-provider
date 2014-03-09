@@ -286,9 +286,10 @@ class CosmoOnOpenStackBootstrapper(object):
 
     def do(self, provider_config, bootstrap_using_script, keep_up):
 
-        mgmt_ip = self._create_topology()
+        mgmt_ip, private_ip = self._create_topology()
         if mgmt_ip is not None:
             installed = self._bootstrap_manager(mgmt_ip,
+                                                private_ip,
                                                 bootstrap_using_script)
         if mgmt_ip and installed:
             return mgmt_ip
@@ -403,24 +404,27 @@ class CosmoOnOpenStackBootstrapper(object):
             {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
             mgr_kpconf['name'],
             msg_id if is_neutron_supported_region else msgconf['name'],
-        )
+            )
 
         if is_neutron_supported_region:
+            network_name = nconf['name']
             if not insconf[EP_FLAG]:  # new server
-                return self._attach_floating_ip(
+                self._attach_floating_ip(
                     compute_config['management_server'], enet_id, server_id)
             else:  # existing server
                 ips = self.server_creator.get_server_ips_in_network(
                     server_id, nconf['name'])
-                if len(ips) > 0:
-                    return ips[1]  # the floating ip
-                else:  # there's no floating ip, attaching it.
-                    return self._attach_floating_ip(
+                if len(ips) < 2:
+                    self._attach_floating_ip(
                         compute_config['management_server'], enet_id,
                         server_id)
         else:
-            return self.server_creator.get_server_ips_in_network(
-                server_id, 'private')[1]
+            network_name = 'private'
+
+        ips = self.server_creator.get_server_ips_in_network(server_id,
+                                                            network_name)
+        private_ip, public_ip = ips[:2]
+        return public_ip, private_ip
 
     def _attach_floating_ip(self, mgmt_server_conf, enet_id, server_id):
         if 'floating_ip' in mgmt_server_conf:
@@ -470,7 +474,10 @@ class CosmoOnOpenStackBootstrapper(object):
     def _run(self, command):
         self._run_with_retries(command)
 
-    def _bootstrap_manager(self, mgmt_ip, bootstrap_using_script):
+    def _bootstrap_manager(self,
+                           mgmt_ip,
+                           private_ip,
+                           bootstrap_using_script):
         lgr.info('initializing manager on the machine at {0}'
                  .format(mgmt_ip))
         compute_config = self.config['compute']
@@ -631,8 +638,12 @@ class CosmoOnOpenStackBootstrapper(object):
                                      '--working_dir={0} --cosmo_version={1} ' \
                                      '--config_dir={2} ' \
                                      '--install_openstack_provisioner ' \
-                                     '--install_logstash' \
-                                     .format(workingdir, version, configdir)
+                                     '--install_logstash ' \
+                                     '--management_ip={3}' \
+                                     .format(workingdir,
+                                             version,
+                                             configdir,
+                                             private_ip)
                 run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
                 self._exec_command_on_manager(ssh, run_script_command)
 
