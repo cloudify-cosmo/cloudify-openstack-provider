@@ -21,6 +21,12 @@ In order to boostrap Cloudify manager on OpenStack you must edit the cloudify-co
 
 The following configuration options are available in the cloudify-config.defaults.yaml file. You can edit this file if you need to change any of these defaults:
 
+NOTE: the use_existing parameter follows this logic:
+* if a resource exists and use_existing is true, it will use the resource.
+* if a resource exists and use_existing is false, it will use the resource.
+* if a resource does not exist and use_existing is true, it will raise an exception.
+* if a resource does not exist and use_existing is false, it will create the resource.
+
 * Keystone configuration
 
   * auth_url: The URL to Keystone authentication service

@@ -49,7 +49,7 @@ import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
 
 
-EP_FLAG = 'externally_provisioned'
+EP_FLAG = 'use_existing'
 
 EXTERNAL_MGMT_PORTS = (22, 8100)  # SSH, REST service
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
@@ -750,21 +750,45 @@ class OpenStackLogicError(RuntimeError):
 
 class CreateOrEnsureExists(object):
 
-    def create_or_ensure_exists(self, provider_config, name, *args, **kw):
-        # config hash is only used for 'externally_provisioned' attribute
-        if EP_FLAG in provider_config and provider_config[EP_FLAG]:
-            method = 'ensure_exists'
-        else:
-            method = 'check_and_create'
-        return getattr(self, method)(name, *args, **kw)
-
-    def check_and_create(self, name, *args, **kw):
+    def _create(self, name, *args, **kw):
         lgr.debug("Will create {0} '{1}'".format(
             self.__class__.WHAT, name))
-        if self.list_objects_with_name(name):
-            raise OpenStackLogicError("{0} '{1}' already exists".format(
-                self.__class__.WHAT, name))
         return self.create(name, *args, **kw)
+
+    def _check(self, name, *args, **kw):
+        lgr.debug("Checking to see if {0} '{1}' already exists".format(
+            self.__class__.WHAT, name))
+        if self.list_objects_with_name(name):
+            lgr.debug("{0} '{1}' already exists".format(
+                self.__class__.WHAT, name))
+            return True
+        else:
+            lgr.debug("{0} '{1}' does not exist".format(
+                self.__class__.WHAT, name))
+            return False
+
+    def create_or_ensure_exists(self, provider_config, name, *args, **kw):
+        """
+        if resource exists:
+            if resource is server:
+                raise already exists
+            use resource
+        else:
+            if use_existing:
+                raise is configured to use_existing but does not exist
+            create resource
+        """
+        if self._check(name, *args, **kw):
+            if self.__class__.WHAT in ('server'):
+                raise OpenStackLogicError("{0} '{1}' already exists".format(
+                                          self.__class__.WHAT, name))
+            return self.ensure_exists(name, *args, **kw)
+        else:
+            if EP_FLAG in provider_config and provider_config[EP_FLAG]:
+                raise OpenStackLogicError("{0} '{1}' is configured to 'use_"
+                                          "existing' but does not exist"
+                                          .format(self.__class__.WHAT, name))
+            return self._create(name, *args, **kw)
 
     def ensure_exists(self, name, *args, **kw):
         lgr.debug("Will use existing {0} '{1}'"
