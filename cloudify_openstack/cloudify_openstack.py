@@ -49,7 +49,7 @@ import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
 
 
-EP_FLAG = 'externally_provisioned'
+EP_FLAG = 'use_existing'
 
 EXTERNAL_PORTS = (22, 8100)  # SSH, REST service
 INTERNAL_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
@@ -727,19 +727,19 @@ class CreateOrEnsureExists(object):
                 raise already exists
             use resource
         else:
-            if externally provisioned:
-                raise marked as externally provisioned but does not exist
-            create create
+            if use_existing:
+                raise is configured to use_existing but does not exist
+            create resource
         """
         if self._check(name, *args, **kw):
-            if self.__class__.WHAT == 'server':
+            if self.__class__.WHAT in ('server'):
                 raise OpenStackLogicError("{0} '{1}' already exists".format(
                                           self.__class__.WHAT, name))
             return self.ensure_exists(name, *args, **kw)
         else:
             if EP_FLAG in provider_config and provider_config[EP_FLAG]:
-                raise OpenStackLogicError("{0} '{1}' is marked as externally "
-                                          "provisioned but does not exist"
+                raise OpenStackLogicError("{0} '{1}' is configured to 'use_"
+                                          "existing' but does not exist"
                                           .format(self.__class__.WHAT, name))
             return self._create(name, *args, **kw)
 
