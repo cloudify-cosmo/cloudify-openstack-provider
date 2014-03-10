@@ -321,12 +321,14 @@ class CosmoOnOpenStackBootstrapper(object):
             nconf = self.config['networking']['int_network']
             net_id = self.network_creator.create_or_ensure_exists(
                 nconf,
-                nconf['name'])
+                nconf['name'],
+                False)
 
             sconf = self.config['networking']['subnet']
             subnet_id = self.subnet_creator.create_or_ensure_exists(
                 sconf,
                 sconf['name'],
+                False,
                 sconf['ip_version'],
                 sconf['cidr'],
                 sconf['dns_nameservers'],
@@ -336,12 +338,14 @@ class CosmoOnOpenStackBootstrapper(object):
             enet_id = self.network_creator.create_or_ensure_exists(
                 enconf,
                 enconf['name'],
+                False,
                 ext=True)
 
             rconf = self.config['networking']['router']
             self.router_creator.create_or_ensure_exists(
                 rconf,
                 rconf['name'],
+                False,
                 interfaces=[{'subnet_id': subnet_id}],
                 external_gateway_info={"network_id": enet_id})
 
@@ -349,9 +353,10 @@ class CosmoOnOpenStackBootstrapper(object):
 
         # Security group for Cosmo created instances
         asgconf = self.config['networking']['agents_security_group']
-        asg_id = self.sg_creator.create_or_ensure_exists(
+        asg_id, agent_sg_created = self.sg_creator.create_or_ensure_exists(
             asgconf,
             asgconf['name'],
+            True,
             'Cosmo created machines',
             [])
 
@@ -364,21 +369,23 @@ class CosmoOnOpenStackBootstrapper(object):
         msg_id = self.sg_creator.create_or_ensure_exists(
             msgconf,
             msgconf['name'],
+            False,
             'Cosmo Manager',
             sg_rules)
 
         # Add rules to agent security group. (Happens here because we need
         # the management security group id)
-        asg_rules = [{'port': port, 'group_id': msg_id}
-                     for port in INTERNAL_AGENT_PORTS]
-        if EP_FLAG not in asgconf or not asgconf[EP_FLAG]:
-            self.sg_creator.add_rules(asg_id, asg_rules)
+        if agent_sg_created:
+            self.sg_creator.add_rules(asg_id,
+                                      [{'port': port, 'group_id': msg_id}
+                                       for port in INTERNAL_AGENT_PORTS])
 
         # Keypairs setup
         mgr_kpconf = compute_config['management_server']['management_keypair']
         self.keypair_creator.create_or_ensure_exists(
             mgr_kpconf,
             mgr_kpconf['name'],
+            False,
             private_key_target_path=
             mgr_kpconf['auto_generated']['private_key_target_path'] if
             'auto_generated' in mgr_kpconf else None,
@@ -390,6 +397,7 @@ class CosmoOnOpenStackBootstrapper(object):
         self.keypair_creator.create_or_ensure_exists(
             agents_kpconf,
             agents_kpconf['name'],
+            False,
             private_key_target_path=agents_kpconf['auto_generated']
             ['private_key_target_path'] if 'auto_generated' in
                                            agents_kpconf else None,
@@ -401,10 +409,11 @@ class CosmoOnOpenStackBootstrapper(object):
         server_id = self.server_creator.create_or_ensure_exists(
             insconf,
             insconf['name'],
+            False,
             {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
             mgr_kpconf['name'],
-            msg_id if is_neutron_supported_region else msgconf['name'],
-            )
+            msg_id if is_neutron_supported_region else msgconf['name']
+        )
 
         if is_neutron_supported_region:
             network_name = nconf['name']
@@ -767,7 +776,8 @@ class CreateOrEnsureExists(object):
                 self.__class__.WHAT, name))
             return False
 
-    def create_or_ensure_exists(self, provider_config, name, *args, **kw):
+    def create_or_ensure_exists(self, provider_config, name, return_created,
+                                *args, **kw):
         """
         if resource exists:
             if resource is server:
@@ -782,13 +792,19 @@ class CreateOrEnsureExists(object):
             if self.__class__.WHAT in ('server'):
                 raise OpenStackLogicError("{0} '{1}' already exists".format(
                                           self.__class__.WHAT, name))
-            return self.ensure_exists(name, *args, **kw)
+            the_id = self.ensure_exists(name, *args, **kw)
+            created = False
         else:
             if EP_FLAG in provider_config and provider_config[EP_FLAG]:
                 raise OpenStackLogicError("{0} '{1}' is configured to 'use_"
                                           "existing' but does not exist"
                                           .format(self.__class__.WHAT, name))
-            return self._create(name, *args, **kw)
+            the_id = self._create(name, *args, **kw)
+            created = True
+        if return_created:
+            return the_id, created
+        else:
+            return the_id
 
     def ensure_exists(self, name, *args, **kw):
         lgr.debug("Will use existing {0} '{1}'"
