@@ -111,7 +111,8 @@ def init(target_directory, reset_config, is_verbose_output=False):
 
 
 def bootstrap(config_path=None, is_verbose_output=False,
-              bootstrap_using_script=True, keep_up=False):
+              bootstrap_using_script=True, keep_up=False,
+              dev_mode=False):
     _set_global_verbosity_level(is_verbose_output)
 
     provider_config = _read_config(config_path)
@@ -133,7 +134,8 @@ def bootstrap(config_path=None, is_verbose_output=False,
         provider_config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator,
         server_killer)
-    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script, keep_up)
+    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script,
+                              keep_up, dev_mode)
     return mgmt_ip
 
 
@@ -291,13 +293,14 @@ class CosmoOnOpenStackBootstrapper(object):
         global verbose_output
         self.verbose_output = verbose_output
 
-    def do(self, provider_config, bootstrap_using_script, keep_up):
+    def do(self, provider_config, bootstrap_using_script, keep_up, dev_mode):
 
         mgmt_ip, private_ip = self._create_topology()
         if mgmt_ip is not None:
             installed = self._bootstrap_manager(mgmt_ip,
                                                 private_ip,
-                                                bootstrap_using_script)
+                                                bootstrap_using_script,
+                                                dev_mode)
         if mgmt_ip and installed:
             return mgmt_ip
         else:
@@ -493,7 +496,8 @@ class CosmoOnOpenStackBootstrapper(object):
     def _bootstrap_manager(self,
                            mgmt_ip,
                            private_ip,
-                           bootstrap_using_script):
+                           bootstrap_using_script,
+                           dev_mode):
         lgr.info('initializing manager on the machine at {0}'
                  .format(mgmt_ip))
         compute_config = self.config['compute']
@@ -583,6 +587,48 @@ class CosmoOnOpenStackBootstrapper(object):
                     lgr.error('failed to install manager')
                     return False
 
+                # try:
+                if dev_mode:
+                    lgr.info('entering dev-mode, '
+                             'dev configuration will be applied...\n'
+                             'NOTE: an internet connection is required...')
+                    # self._run('sudo apt-get update')
+                    dev_config = self.config['dev']
+
+                    print json.dumps(dev_config, sort_keys=True,
+                                     indent=4, separators=(',', ': '))
+                    for key, value in dev_config.iteritems():
+                        virtualenv = value['virtualenv']
+                        print '#virtualenv: ' + str(virtualenv)
+
+                        if 'downloads' in value:
+                            # print '##downloads: ' + str(value['downloads'])
+                            # self._run('mkdir -p /tmp')
+                            for download in value['downloads']:
+                                print '###download: ' + download
+                                self._run('wget {0} -O /tmp/module.tar.gz'
+                                    .format(download))
+                                self._run('sudo tar -xvf {0}'
+                                    .format('/tmp/module.tar.gz'))
+
+                        if 'installs' in value:
+                            # print '##installs: ' + str(value['installs'])
+                            for install in value['installs']:
+                                print '###install: ' + install
+                                self._run('sudo {0}/bin/pip --default-timeout'
+                                          '=45 install {1} --upgrade'
+                                          .format(virtualenv, install))
+
+                        if 'runs' in value:
+                            # print '##runs: ' + str(value['runs'])
+                            for command in value['runs']:
+                                print '###command: ' + command
+                                self._run(command)
+
+                    # sys.exit(1)
+            # except:
+                # lgr.error('failed to apply dev-mode config')
+                    return False
                 lgr.debug('setting verbosity to previous state')
                 self.verbose_output = v
                 return True

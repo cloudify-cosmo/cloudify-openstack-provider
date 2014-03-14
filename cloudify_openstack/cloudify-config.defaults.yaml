@@ -68,3 +68,23 @@ cloudify:
     cloudify_packages_path: /cloudify
     cloudify_components_package_path: /cloudify3-components
     cloudify_package_path: /cloudify3
+
+dev:
+    plugins:
+        virtualenv: /opt/celery/cloudify.management__worker/env/
+        installs:
+            - https://github.com/CloudifySource/cosmo-plugin-agent-installer/archive/develop.tar.gz
+            - https://github.com/CloudifySource/cosmo-plugin-plugin-installer/archive/develop.tar.gz
+            - https://github.com/CloudifySource/cosmo-plugin-kv-store/archive/develop.tar.gz
+            - https://github.com/CloudifySource/cosmo-celery-common/archive/develop.tar.gz
+        runs:
+            - sudo /etc/init.d/celery-cloudify.management restart
+    rest-server:
+        virtualenv: /opt/manager
+        downloads:
+            - https://github.com/CloudifySource/cosmo-manager/archive/develop.tar.gz
+        installs:
+            - /tmp/cosmo-manager-develop/manager-rest/
+        runs:
+            - sudo restart manager
+            - sudo restart workflow
