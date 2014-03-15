@@ -78,7 +78,7 @@ dev:
             - https://github.com/CloudifySource/cosmo-plugin-kv-store/archive/develop.tar.gz
             - https://github.com/CloudifySource/cosmo-celery-common/archive/develop.tar.gz
         runs:
-            - sudo /etc/init.d/celery-cloudify.management restart
+            - sudo /etc/init.d/celeryd-cloudify.management restart
     rest-server:
         virtualenv: /opt/manager
         downloads:
