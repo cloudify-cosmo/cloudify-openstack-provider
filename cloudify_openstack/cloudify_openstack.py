@@ -64,6 +64,10 @@ SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 CONFIG_FILE_NAME = 'cloudify-config.yaml'
 DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
+CLOUDIFY_PACKAGES_PATH = '/cloudify'
+CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify3-components'
+CLOUDIFY_PACKAGE_PATH = '/cloudify3'
+
 verbose_output = False
 
 
@@ -548,15 +552,15 @@ class CosmoOnOpenStackBootstrapper(object):
                                                      'aborts',
                                                      'warnings'):
 
-                lgr.info('downloading cloudify components package...')
                 try:
+                    lgr.info('downloading cloudify components package...')
                     self._download_package(
-                        cosmo_config['cloudify_packages_path'],
+                        CLOUDIFY_PACKAGES_PATH,
                         cosmo_config['cloudify_components_package_url'])
 
                     lgr.info('downloading cloudify package...')
                     self._download_package(
-                        cosmo_config['cloudify_packages_path'],
+                        CLOUDIFY_PACKAGES_PATH,
                         cosmo_config['cloudify_package_url'])
                 except:
                     lgr.error('failed to download cloudify packages. '
@@ -564,71 +568,74 @@ class CosmoOnOpenStackBootstrapper(object):
                               'configured locations in the config file')
                     return False
 
-                lgr.info('unpacking cloudify packages...')
                 try:
+                    lgr.info('unpacking cloudify packages...')
                     self._unpack(
-                        cosmo_config['cloudify_packages_path'])
-
-                    lgr.debug('verifying verbosity for installation process')
-                    v = self.verbose_output
-                    self.verbose_output = True
+                        CLOUDIFY_PACKAGES_PATH)
                 except:
                     lgr.error('failed to unpack cloudify packages')
                     return False
 
-                lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
                 try:
-                    self._run('sudo %s/cloudify3-components-bootstrap.sh' %
-                              cosmo_config['cloudify_components_package_path'])
+                    lgr.debug('verifying verbosity for installation process')
+                    v = self.verbose_output
+                    self.verbose_output = True
 
-                    self._run('sudo %s/cloudify3-bootstrap.sh' %
-                              cosmo_config['cloudify_package_path'])
+                    lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
+                    self._run('sudo {0}/cloudify3-components-bootstrap.sh'
+                        .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
+
+                    self._run('sudo {0}/cloudify3-bootstrap.sh'
+                        .format(CLOUDIFY_PACKAGE_PATH))
                 except:
                     lgr.error('failed to install manager')
                     return False
 
-                # try:
                 if dev_mode:
-                    lgr.info('entering dev-mode, '
-                             'dev configuration will be applied...\n'
-                             'NOTE: an internet connection is required...')
-                    # self._run('sudo apt-get update')
-                    dev_config = self.config['dev']
+                    try:
+                        lgr.info('\n\n\n\n\nentering dev-mode. '
+                                 'dev configuration will be applied...\n'
+                                 'NOTE: an internet connection is required...')
 
-                    print json.dumps(dev_config, sort_keys=True,
-                                     indent=4, separators=(',', ': '))
-                    for key, value in dev_config.iteritems():
-                        virtualenv = value['virtualenv']
-                        print '#virtualenv: ' + str(virtualenv)
+                        dev_config = self.config['dev']
+                        # lgr.debug(json.dumps(dev_config, sort_keys=True,
+                        #           indent=4, separators=(',', ': ')))
 
-                        if 'downloads' in value:
-                            # print '##downloads: ' + str(value['downloads'])
-                            # self._run('mkdir -p /tmp')
-                            for download in value['downloads']:
-                                print '###download: ' + download
-                                self._run('wget {0} -O /tmp/module.tar.gz'
-                                    .format(download))
-                                self._run('sudo tar -xvf {0}'
-                                    .format('/tmp/module.tar.gz'))
+                        for key, value in dev_config.iteritems():
+                            virtualenv = value['virtualenv']
+                            lgr.debug('virtualenv is: ' + str(virtualenv))
 
-                        if 'installs' in value:
-                            # print '##installs: ' + str(value['installs'])
-                            for install in value['installs']:
-                                print '###install: ' + install
-                                self._run('sudo {0}/bin/pip --default-timeout'
-                                          '=45 install {1} --upgrade'
-                                          .format(virtualenv, install))
+                            if 'preruns' in value:
+                                for command in value['preruns']:
+                                    # lgr.debug('running command: ' + command)
+                                    self._run(command)
 
-                        if 'runs' in value:
-                            # print '##runs: ' + str(value['runs'])
-                            for command in value['runs']:
-                                print '###command: ' + command
-                                self._run(command)
+                            if 'downloads' in value:
+                                self._run('mkdir -p /tmp')
+                                for download in value['downloads']:
+                                    lgr.debug('downloading: ' + download)
+                                    self._run('sudo wget {0} -O '
+                                              '/tmp/module.tar.gz'
+                                              .format(download))
+                                    self._run('sudo tar -C /tmp -xvf {0}'
+                                        .format('/tmp/module.tar.gz'))
 
-                    # sys.exit(1)
-            # except:
-                # lgr.error('failed to apply dev-mode config')
-                    return False
+                            if 'installs' in value:
+                                for install in value['installs']:
+                                    lgr.debug('installing module: ' + install)
+                                    self._run('sudo {0}/bin/pip '
+                                              '--default-timeout'
+                                              '=45 install {1} --upgrade'
+                                              .format(virtualenv, install))
+
+                            if 'runs' in value:
+                                for command in value['runs']:
+                                    # lgr.debug('running command: ' + command)
+                                    self._run(command)
+                    except:
+                        lgr.error('failed to apply dev-mode config')
+                        return False
+
                 lgr.debug('setting verbosity to previous state')
                 self.verbose_output = v
                 return True
