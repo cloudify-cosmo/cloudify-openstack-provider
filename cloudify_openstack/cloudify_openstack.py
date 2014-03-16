@@ -595,7 +595,8 @@ class CosmoOnOpenStackBootstrapper(object):
                     try:
                         lgr.info('\n\n\n\n\nentering dev-mode. '
                                  'dev configuration will be applied...\n'
-                                 'NOTE: an internet connection is required...')
+                                 'NOTE: an internet connection might be '
+                                 'required...')
 
                         dev_config = self.config['dev']
                         # lgr.debug(json.dumps(dev_config, sort_keys=True,
@@ -607,7 +608,6 @@ class CosmoOnOpenStackBootstrapper(object):
 
                             if 'preruns' in value:
                                 for command in value['preruns']:
-                                    # lgr.debug('running command: ' + command)
                                     self._run(command)
 
                             if 'downloads' in value:
@@ -630,7 +630,6 @@ class CosmoOnOpenStackBootstrapper(object):
 
                             if 'runs' in value:
                                 for command in value['runs']:
-                                    # lgr.debug('running command: ' + command)
                                     self._run(command)
                     except:
                         lgr.error('failed to apply dev-mode config')

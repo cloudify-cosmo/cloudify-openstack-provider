@@ -66,14 +66,22 @@ cloudify:
     #cloudify_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3_3.0.0_amd64.deb
     cloudify_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify3_3.0.0_amd64.deb
 
+#this section only applies to bootstrapping in --dev-mode
 dev:
+    #each section here is identified with one virtual environment
     plugins:
+        #which virtualenv dir does this apply to?
         virtualenv: /opt/celery/cloudify.management__worker/env/
+        #which shell commands are run before the branches are deployed?
+        preruns:
+            - echo "Hi!"
+        #which branches will be applied to this virtualenv?
         installs:
             - https://github.com/CloudifySource/cosmo-plugin-agent-installer/archive/develop.tar.gz
             - https://github.com/CloudifySource/cosmo-plugin-plugin-installer/archive/develop.tar.gz
             - https://github.com/CloudifySource/cosmo-plugin-kv-store/archive/develop.tar.gz
             - https://github.com/CloudifySource/cosmo-celery-common/archive/develop.tar.gz
+        #which shell commands are run after the branches are deployed?
         runs:
             - sudo /etc/init.d/celeryd-cloudify.management restart
     rest-server:
@@ -81,7 +89,7 @@ dev:
         downloads:
             - https://github.com/CloudifySource/cosmo-manager/archive/develop.tar.gz
         installs:
-            - /tmp/cosmo-manager-develop/manager-rest/
+            - /tmp/cosmo-manager-*/manager-rest/
         runs:
             - sudo restart manager
             - sudo restart workflow
