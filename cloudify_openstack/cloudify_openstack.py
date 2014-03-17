@@ -58,6 +58,7 @@ INTERNAL_AGENT_PORTS = (22,)
 
 SSH_CONNECT_RETRIES = 12
 SSH_CONNECT_SLEEP = 5
+SSH_CONNECT_PORT = 22
 
 SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 
@@ -509,6 +510,10 @@ class CosmoOnOpenStackBootstrapper(object):
                     management_server_config['management_keypair']),
                 management_server_config['user_on_management'])
         except:
+            lgr.info('ssh channel creation failed. '
+                     'your private and public keys might not be matching or '
+                     'your security group might not be configured to allow '
+                     'connection to port {0}.'.format(SSH_CONNECT_PORT))
             return False
 
         env.user = management_server_config['user_on_management']
@@ -684,13 +689,15 @@ class CosmoOnOpenStackBootstrapper(object):
                 ssh.connect(mgmt_ip, username=user_on_management,
                             key_filename=management_key_path,
                             look_for_keys=False)
+                lgr.debug('ssh connection successful')
                 return ssh
-            except socket.error:
+            except socket.error as err:
                 lgr.debug(
-                    "SSH connection to {0} failed. Waiting {1} seconds "
-                    "before retrying".format(mgmt_ip, SSH_CONNECT_SLEEP))
-                time.sleep(SSH_CONNECT_SLEEP)
-        lgr.error('Failed to ssh connect to management server')
+                    "SSH connection to {0} failed ({1}). Waiting {2} seconds "
+                    "before retrying".format(mgmt_ip, err, 5))
+                time.sleep(5)
+        lgr.error('Failed to ssh connect to management server ({0}'
+                  .format(err))
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
                                keystone_config, agents_key_path,
