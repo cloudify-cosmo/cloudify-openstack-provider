@@ -1165,15 +1165,17 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
 
     def _wait_for_server_to_terminate(self, server):
         timeout = 20
-        while server.status == "ACTIVE":
-            timeout -= 2
-            if timeout <= 0:
-                raise RuntimeError('Server failed to terminate in time')
-            time.sleep(2)
+        while timeout > 0:
+            timeout -= 1
             try:
                 server = self.nova_client.servers.get(server.id)
-            except RuntimeError:
-                pass
+                lgr.debug('server status: ' + server.status)
+            except:
+                lgr.info('server terminated')
+                return
+            time.sleep(2)
+        else:
+            raise RuntimeError('server failed to terminate in time')
 
 
 class OpenStackConnector(object):
