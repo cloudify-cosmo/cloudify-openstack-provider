@@ -313,7 +313,6 @@ class CosmoOnOpenStackBootstrapper(object):
                 server = self.server_killer.list_objects_by_ip(mgmt_ip)
                 if server is not None:
                     self.server_killer.kill(server)
-                    lgr.info('server terminated')
                 else:
                     lgr.info('server is not up, exiting')
                 sys.exit(1)
