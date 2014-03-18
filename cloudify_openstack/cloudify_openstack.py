@@ -521,7 +521,7 @@ class CosmoOnOpenStackBootstrapper(object):
             lgr.info('ssh channel creation failed. '
                      'your private and public keys might not be matching or '
                      'your security group might not be configured to allow '
-                     'connection to port {0}.'.format(SSH_CONNECT_PORT))
+                     'connections to port {0}.'.format(SSH_CONNECT_PORT))
             return False
 
         env.user = management_server_config['user_on_management']
