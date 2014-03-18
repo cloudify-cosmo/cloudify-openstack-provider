@@ -592,49 +592,60 @@ class CosmoOnOpenStackBootstrapper(object):
                     return False
 
                 if dev_mode:
-                    try:
-                        lgr.info('\n\n\n\n\nentering dev-mode. '
-                                 'dev configuration will be applied...\n'
-                                 'NOTE: an internet connection might be '
-                                 'required...')
+                    lgr.info('\n\n\n\n\nentering dev-mode. '
+                             'dev configuration will be applied...\n'
+                             'NOTE: an internet connection might be '
+                             'required...')
 
-                        dev_config = self.config['dev']
-                        # lgr.debug(json.dumps(dev_config, sort_keys=True,
-                        #           indent=4, separators=(',', ': ')))
+                    dev_config = self.config['dev']
+                    # lgr.debug(json.dumps(dev_config, sort_keys=True,
+                    #           indent=4, separators=(',', ': ')))
 
-                        for key, value in dev_config.iteritems():
-                            virtualenv = value['virtualenv']
-                            lgr.debug('virtualenv is: ' + str(virtualenv))
+                    for key, value in dev_config.iteritems():
+                        virtualenv = value['virtualenv']
+                        lgr.debug('virtualenv is: ' + str(virtualenv))
 
-                            if 'preruns' in value:
-                                for command in value['preruns']:
-                                    self._run(command)
+                        if 'preruns' in value:
+                            for command in value['preruns']:
+                                self._run(command)
 
-                            if 'downloads' in value:
-                                self._run('mkdir -p /tmp')
-                                for download in value['downloads']:
-                                    lgr.debug('downloading: ' + download)
-                                    self._run('sudo wget {0} -O '
-                                              '/tmp/module.tar.gz'
-                                              .format(download))
-                                    self._run('sudo tar -C /tmp -xvf {0}'
-                                        .format('/tmp/module.tar.gz'))
+                        if 'downloads' in value:
+                            self._run('mkdir -p /tmp')
+                            for download in value['downloads']:
+                                lgr.debug('downloading: ' + download)
+                                self._run('sudo wget {0} -O '
+                                          '/tmp/module.tar.gz'
+                                          .format(download))
+                                self._run('sudo tar -C /tmp -xvf {0}'
+                                    .format('/tmp/module.tar.gz'))
 
-                            if 'installs' in value:
+                        if 'installs' in value:
+                            src_wfs = False
+                            try:
+                                src_wfs = value['installs']['workflow_service']
+                            except:
+                                pass
+                            if src_wfs:
+                                lgr.debug('installing wfs')
+                                dst_wfs = ('{0}/cosmo-manager-*/'
+                                           'workflow-service/'
+                                           .format(virtualenv))
+                                lgr.debug('workflow service config..')
+                                self._run('sudo cp -R {0} {1}'
+                                          .format(src_wfs, dst_wfs))
+                            else:
                                 for install in value['installs']:
-                                    lgr.debug('installing module: ' + install)
+                                    lgr.debug('installing: ' + install)
                                     self._run('sudo {0}/bin/pip '
                                               '--default-timeout'
                                               '=45 install {1} --upgrade'
                                               .format(virtualenv, install))
 
-                            if 'runs' in value:
-                                for command in value['runs']:
-                                    self._run(command)
-                    except:
-                        lgr.error('failed to apply dev-mode config')
-                        return False
+                        if 'runs' in value:
+                            for command in value['runs']:
+                                self._run(command)
 
+                    lgr.info('managenet ip is {0}'.format(mgmt_ip))
                 lgr.debug('setting verbosity to previous state')
                 self.verbose_output = v
                 return True
