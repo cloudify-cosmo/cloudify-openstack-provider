@@ -751,7 +751,7 @@ class CosmoOnOpenStackBootstrapper(object):
             try:
                 ssh.connect(mgmt_ip, username=user_on_management,
                             key_filename=management_key_path,
-                            look_for_keys=False)
+                            look_for_keys=False, timeout=10)
                 lgr.debug('ssh connection successful')
                 return ssh
             except socket.error as err:
