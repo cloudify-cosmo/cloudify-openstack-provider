@@ -64,6 +64,10 @@ SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 CONFIG_FILE_NAME = 'cloudify-config.yaml'
 DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
+CLOUDIFY_PACKAGES_PATH = '/cloudify'
+CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify3-components'
+CLOUDIFY_PACKAGE_PATH = '/cloudify3'
+
 verbose_output = False
 
 
@@ -111,7 +115,8 @@ def init(target_directory, reset_config, is_verbose_output=False):
 
 
 def bootstrap(config_path=None, is_verbose_output=False,
-              bootstrap_using_script=True, keep_up=False):
+              bootstrap_using_script=True, keep_up=False,
+              dev_mode=False):
     _set_global_verbosity_level(is_verbose_output)
 
     provider_config = _read_config(config_path)
@@ -133,7 +138,8 @@ def bootstrap(config_path=None, is_verbose_output=False,
         provider_config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator,
         server_killer)
-    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script, keep_up)
+    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script,
+                              keep_up, dev_mode)
     return mgmt_ip
 
 
@@ -291,13 +297,14 @@ class CosmoOnOpenStackBootstrapper(object):
         global verbose_output
         self.verbose_output = verbose_output
 
-    def do(self, provider_config, bootstrap_using_script, keep_up):
+    def do(self, provider_config, bootstrap_using_script, keep_up, dev_mode):
 
         mgmt_ip, private_ip = self._create_topology()
         if mgmt_ip is not None:
             installed = self._bootstrap_manager(mgmt_ip,
                                                 private_ip,
-                                                bootstrap_using_script)
+                                                bootstrap_using_script,
+                                                dev_mode)
         if mgmt_ip and installed:
             return mgmt_ip
         else:
@@ -492,7 +499,8 @@ class CosmoOnOpenStackBootstrapper(object):
     def _bootstrap_manager(self,
                            mgmt_ip,
                            private_ip,
-                           bootstrap_using_script):
+                           bootstrap_using_script,
+                           dev_mode):
         lgr.info('initializing manager on the machine at {0}'
                  .format(mgmt_ip))
         compute_config = self.config['compute']
@@ -543,15 +551,15 @@ class CosmoOnOpenStackBootstrapper(object):
                                                      'aborts',
                                                      'warnings'):
 
-                lgr.info('downloading cloudify components package...')
                 try:
+                    lgr.info('downloading cloudify components package...')
                     self._download_package(
-                        cosmo_config['cloudify_packages_path'],
+                        CLOUDIFY_PACKAGES_PATH,
                         cosmo_config['cloudify_components_package_url'])
 
                     lgr.info('downloading cloudify package...')
                     self._download_package(
-                        cosmo_config['cloudify_packages_path'],
+                        CLOUDIFY_PACKAGES_PATH,
                         cosmo_config['cloudify_package_url'])
                 except:
                     lgr.error('failed to download cloudify packages. '
@@ -559,29 +567,84 @@ class CosmoOnOpenStackBootstrapper(object):
                               'configured locations in the config file')
                     return False
 
-                lgr.info('unpacking cloudify packages...')
                 try:
+                    lgr.info('unpacking cloudify packages...')
                     self._unpack(
-                        cosmo_config['cloudify_packages_path'])
-
-                    lgr.debug('verifying verbosity for installation process')
-                    v = self.verbose_output
-                    self.verbose_output = True
+                        CLOUDIFY_PACKAGES_PATH)
                 except:
                     lgr.error('failed to unpack cloudify packages')
                     return False
 
-                lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
                 try:
-                    self._run('sudo %s/cloudify3-components-bootstrap.sh' %
-                              cosmo_config['cloudify_components_package_path'])
+                    lgr.debug('verifying verbosity for installation process')
+                    v = self.verbose_output
+                    self.verbose_output = True
 
-                    self._run('sudo %s/cloudify3-bootstrap.sh' %
-                              cosmo_config['cloudify_package_path'])
+                    lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
+                    self._run('sudo {0}/cloudify3-components-bootstrap.sh'
+                        .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
+
+                    self._run('sudo {0}/cloudify3-bootstrap.sh'
+                        .format(CLOUDIFY_PACKAGE_PATH))
                 except:
                     lgr.error('failed to install manager')
                     return False
 
+                if dev_mode:
+                    lgr.info('\n\n\n\n\nentering dev-mode. '
+                             'dev configuration will be applied...\n'
+                             'NOTE: an internet connection might be '
+                             'required...')
+
+                    dev_config = self.config['dev']
+                    # lgr.debug(json.dumps(dev_config, sort_keys=True,
+                    #           indent=4, separators=(',', ': ')))
+
+                    for key, value in dev_config.iteritems():
+                        virtualenv = value['virtualenv']
+                        lgr.debug('virtualenv is: ' + str(virtualenv))
+
+                        if 'preruns' in value:
+                            for command in value['preruns']:
+                                self._run(command)
+
+                        if 'downloads' in value:
+                            self._run('mkdir -p /tmp')
+                            for download in value['downloads']:
+                                lgr.debug('downloading: ' + download)
+                                self._run('sudo wget {0} -O '
+                                          '/tmp/module.tar.gz'
+                                          .format(download))
+                                self._run('sudo tar -C /tmp -xvf {0}'
+                                    .format('/tmp/module.tar.gz'))
+
+                        if 'installs' in value:
+                            src_wfs = False
+                            try:
+                                src_wfs = value['installs']['workflow_service']
+                            except:
+                                pass
+                            if src_wfs:
+                                lgr.debug('installing wfs')
+                                dst_wfs = ('{0}/cosmo-manager-*/'
+                                           'workflow-service/'
+                                           .format(virtualenv))
+                                lgr.debug('workflow service config..')
+                                self._run('sudo cp -R {0} {1}'
+                                          .format(src_wfs, dst_wfs))
+                            else:
+                                for install in value['installs']:
+                                    lgr.debug('installing: ' + install)
+                                    self._run('sudo {0}/bin/pip '
+                                              '--default-timeout'
+                                              '=45 install {1} --upgrade'
+                                              .format(virtualenv, install))
+
+                        if 'runs' in value:
+                            for command in value['runs']:
+                                self._run(command)
+
+                    lgr.info('managenet ip is {0}'.format(mgmt_ip))
                 lgr.debug('setting verbosity to previous state')
                 self.verbose_output = v
                 return True
