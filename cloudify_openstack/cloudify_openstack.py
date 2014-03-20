@@ -1227,8 +1227,8 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
 
     def _wait_for_server_to_terminate(self, server):
         timeout = 20
-        while timeout > 0:
-            timeout -= 1
+        deadline = time.time() + timeout
+        while time.time() < deadline:
             try:
                 server = self.nova_client.servers.get(server.id)
                 lgr.debug('server status: ' + server.status)
