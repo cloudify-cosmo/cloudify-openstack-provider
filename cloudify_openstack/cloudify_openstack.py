@@ -321,7 +321,6 @@ class CosmoOnOpenStackBootstrapper(object):
                 server = self.server_killer.list_objects_by_ip(mgmt_ip)
                 if server is not None:
                     self.server_killer.kill(server)
-                    lgr.info('server terminated')
                 else:
                     lgr.info('server is not up, exiting')
                 sys.exit(1)
@@ -1235,15 +1234,17 @@ class OpenStackServerKiller(CreateOrEnsureExistsNova):
 
     def _wait_for_server_to_terminate(self, server):
         timeout = 20
-        while server.status == "ACTIVE":
-            timeout -= 2
-            if timeout <= 0:
-                raise RuntimeError('Server failed to terminate in time')
-            time.sleep(2)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
             try:
                 server = self.nova_client.servers.get(server.id)
-            except RuntimeError:
-                pass
+                lgr.debug('server status: ' + server.status)
+            except:
+                lgr.info('server terminated')
+                return
+            time.sleep(2)
+        else:
+            raise RuntimeError('server failed to terminate in time')
 
 
 class OpenStackConnector(object):
