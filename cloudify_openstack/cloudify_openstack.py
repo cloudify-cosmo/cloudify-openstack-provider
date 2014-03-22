@@ -18,30 +18,25 @@ __author__ = 'ran'
 
 # Standard
 import os
-import errno
 import shutil
 import inspect
 import itertools
 import time
-import yaml
 import json
-import socket
-import paramiko
 import tempfile
+import paramiko
+import socket
 import sys
+import errno
 from os.path import expanduser
-from copy import deepcopy
 from scp import SCPClient
-from fabric.api import run, env
-from fabric.context_managers import settings, hide
 import logging
 import logging.config
-import config
+from cosmo_cli.cosmo_cli import logger, _set_global_verbosity_level
 
 # Validator
-from IPy import IP
 from jsonschema import ValidationError, Draft4Validator
-from schemas import OPENSTACK_SCHEMA
+from IPy import IP
 
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
@@ -60,69 +55,21 @@ SSH_CONNECT_RETRIES = 12
 SSH_CONNECT_SLEEP = 5
 SSH_CONNECT_PORT = 22
 
-SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
-
-CONFIG_FILE_NAME = 'cloudify-config.yaml'
-DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
-
-CLOUDIFY_PACKAGES_PATH = '/cloudify'
-CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify3-components'
-CLOUDIFY_PACKAGE_PATH = '/cloudify3'
-
 verbose_output = False
-
-
-#initialize logger
-if os.path.isfile(config.LOG_DIR):
-    sys.exit('file {0} exists - cloudify log directory cannot be created '
-             'there. please remove the file and try again.'
-             .format(config.LOG_DIR))
-try:
-    logfile = config.LOGGER['handlers']['file']['filename']
-    d = os.path.dirname(logfile)
-    if not os.path.exists(d):
-        os.makedirs(d)
-    logging.config.dictConfig(config.LOGGER)
-    lgr = logging.getLogger('main')
-    lgr.setLevel(logging.INFO)
-    flgr = logging.getLogger('file')
-    flgr.setLevel(logging.DEBUG)
-except ValueError:
-    sys.exit('could not initialize logger.'
-             ' verify your logger config'
-             ' and permissions to write to {0}'
-             .format(logfile))
 
 # http://stackoverflow.com/questions/8144545/turning-off-logging-in-paramiko
 logging.getLogger("paramiko").setLevel(logging.WARNING)
 logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(
     logging.ERROR)
 
+lgr, flgr = logger()
 
-def init(target_directory, reset_config, is_verbose_output=False):
+
+def provision(provider_config, is_verbose_output=False,
+              keep_up=False):
+
     _set_global_verbosity_level(is_verbose_output)
-
-    if not reset_config and os.path.exists(
-            os.path.join(target_directory, CONFIG_FILE_NAME)):
-        return False
-
-    provider_dir = os.path.dirname(os.path.realpath(__file__))
-    files_path = os.path.join(provider_dir, CONFIG_FILE_NAME)
-
-    lgr.debug('copying provider files from {0} to {1}'
-              .format(files_path, target_directory))
-    shutil.copy(files_path, target_directory)
-    return True
-
-
-def bootstrap(config_path=None, is_verbose_output=False,
-              bootstrap_using_script=True, keep_up=False,
-              dev_mode=False):
-    _set_global_verbosity_level(is_verbose_output)
-
-    provider_config = _read_config(config_path)
-    _validate_config(provider_config)
-
+    # implement the resource provisioning process.
     connector = OpenStackConnector(provider_config)
     network_creator = OpenStackNetworkCreator(connector)
     subnet_creator = OpenStackSubnetCreator(connector)
@@ -139,16 +86,16 @@ def bootstrap(config_path=None, is_verbose_output=False,
         provider_config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator,
         server_killer)
-    mgmt_ip = bootstrapper.do(provider_config, bootstrap_using_script,
-                              keep_up, dev_mode)
-    return mgmt_ip
+    mgmt_ip, private_ip, ssh_key, ssh_user = bootstrapper._create_topology()
+    if mgmt_ip is not None:
+        r = bootstrapper._copy_files(mgmt_ip)
+        if r is not None:
+            return mgmt_ip, private_ip, ssh_key, ssh_user
 
 
-def teardown(management_ip, is_verbose_output=False):
-    _set_global_verbosity_level(is_verbose_output)
+def teardown(provider_config, management_ip, is_verbose_output=False):
 
     lgr.info('NOTE: currently only instance teardown is implemented!')
-    provider_config = _read_config(config_file_path=None)
 
     connector = OpenStackConnector(provider_config)
     # network_killer = OpenStackNetworkKiller(connector)
@@ -166,60 +113,29 @@ def teardown(management_ip, is_verbose_output=False):
     killer.do()
 
 
-def _set_global_verbosity_level(is_verbose_output=False):
-    # we need both lgr.setLevel and the verbose_output parameter
-    # since not all output is generated at the logger level.
-    # verbose_output can help us control that.
-    global verbose_output
-    verbose_output = is_verbose_output
-    if verbose_output:
-        lgr.setLevel(logging.DEBUG)
+def _validate_provider(provider_config, schema=None, is_verbose_output=False):
 
+    _set_global_verbosity_level(is_verbose_output)
+    if schema is not None:
+        global validated
+        validated = True
+        verifier = OpenStackConfigFileValidator()
 
-def _read_config(config_file_path):
+        lgr.info('validating provider configuration file...')
+        verifier._validate_cidr('networking.subnet.cidr',
+                                provider_config['networking']
+                                ['subnet']['cidr'])
+        verifier._validate_cidr('networking.management_security_group.cidr',
+                                provider_config['networking']
+                                ['management_security_group']['cidr'])
 
-    if not config_file_path:
-        config_file_path = CONFIG_FILE_NAME
-    defaults_config_file_path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        DEFAULTS_CONFIG_FILE_NAME)
-
-    if not os.path.exists(config_file_path) or not os.path.exists(
-            defaults_config_file_path):
-        if not os.path.exists(defaults_config_file_path):
-            raise ValueError('Missing the defaults configuration file; '
-                             'expected to find it at {0}'.format(
-                                 defaults_config_file_path))
-        raise ValueError('Missing the configuration file; expected to find '
-                         'it at {0}'.format(config_file_path))
-
-    lgr.debug('reading provider config files')
-    with open(config_file_path, 'r') as config_file, \
-            open(defaults_config_file_path, 'r') as defaults_config_file:
-
-        lgr.debug('safe loading user config')
-        user_config = yaml.safe_load(config_file.read())
-
-        lgr.debug('safe loading default config')
-        defaults_config = yaml.safe_load(defaults_config_file.read())
-
-    lgr.debug('merging configs')
-    merged_config = _deep_merge_dictionaries(user_config, defaults_config) \
-        if user_config else defaults_config
-    return merged_config
-
-
-def _deep_merge_dictionaries(overriding_dict, overridden_dict):
-    merged_dict = deepcopy(overridden_dict)
-    for k, v in overriding_dict.iteritems():
-        if k in merged_dict and isinstance(v, dict):
-            if isinstance(merged_dict[k], dict):
-                merged_dict[k] = _deep_merge_dictionaries(v, merged_dict[k])
-            else:
-                raise RuntimeError('type conflict at key {0}'.format(k))
+        if validated:
+            lgr.info('provider configuration file validated successfully')
         else:
-            merged_dict[k] = deepcopy(v)
-    return merged_dict
+            lgr.error('provider configuration validation failed!')
+            sys.exit(1)
+    else:
+        lgr.warning('no schema provided to validate against!')
 
 
 def _mkdir_p(path):
@@ -231,27 +147,6 @@ def _mkdir_p(path):
         if exc.errno == errno.EEXIST and os.path.isdir(path):
             return
         raise
-
-
-def _validate_config(provider_config, schema=OPENSTACK_SCHEMA):
-    global validated
-    validated = True
-    verifier = OpenStackConfigFileValidator()
-
-    lgr.info('validating provider configuration file...')
-    verifier._validate_cidr('networking.subnet.cidr',
-                            provider_config['networking']
-                            ['subnet']['cidr'])
-    verifier._validate_cidr('networking.management_security_group.cidr',
-                            provider_config['networking']
-                            ['management_security_group']['cidr'])
-    verifier._validate_schema(provider_config, schema)
-
-    if validated:
-        lgr.info('provider configuration file validated successfully')
-    else:
-        lgr.error('provider configuration validation failed!')
-        sys.exit(1)
 
 
 class OpenStackConfigFileValidator:
@@ -285,7 +180,7 @@ class CosmoOnOpenStackBootstrapper(object):
     def __init__(self, provider_config, network_creator, subnet_creator,
                  router_creator, sg_creator, floating_ip_creator,
                  keypair_creator, server_creator, server_killer):
-        self.config = provider_config
+        self.provider_config = provider_config
         self.network_creator = network_creator
         self.subnet_creator = subnet_creator
         self.router_creator = router_creator
@@ -298,142 +193,168 @@ class CosmoOnOpenStackBootstrapper(object):
         global verbose_output
         self.verbose_output = verbose_output
 
-    def do(self, provider_config, bootstrap_using_script, keep_up, dev_mode):
-
-        mgmt_ip, private_ip = self._create_topology()
-        if mgmt_ip is not None:
-            installed = self._bootstrap_manager(mgmt_ip,
-                                                private_ip,
-                                                bootstrap_using_script,
-                                                dev_mode)
-        if mgmt_ip and installed:
-            return mgmt_ip
-        else:
-            if keep_up:
-                lgr.info('manager server will remain up')
-                sys.exit(1)
-            else:
-                lgr.info('tearing down manager server'
-                         ' due to bootstrap failure')
-                # servers = self.server_killer.list_objects_with_name(
-                    # provider_config['compute']
-                                   # ['management_server']['instance']['name'])
-                server = self.server_killer.list_objects_by_ip(mgmt_ip)
-                if server is not None:
-                    self.server_killer.kill(server)
-                else:
-                    lgr.info('server is not up, exiting')
-                sys.exit(1)
-
     def _create_topology(self):
-        compute_config = self.config['compute']
+        compute_config = self.provider_config['compute']
         insconf = compute_config['management_server']['instance']
 
         is_neutron_supported_region = \
-            self.config['networking']['neutron_supported_region']
+            self.provider_config['networking']['neutron_supported_region']
         if is_neutron_supported_region:
-            nconf = self.config['networking']['int_network']
-            net_id = self.network_creator.create_or_ensure_exists(
-                nconf,
-                nconf['name'],
-                False)
+            nconf = self.provider_config['networking']['int_network']
+            try:
+                net_id = self.network_creator.create_or_ensure_exists(
+                    nconf,
+                    nconf['name'],
+                    False)
+            except Exception as exception:
+                lgr.error('failed to create internal network ({0})'.format(
+                    exception))
+                return None
 
-            sconf = self.config['networking']['subnet']
-            subnet_id = self.subnet_creator.create_or_ensure_exists(
-                sconf,
-                sconf['name'],
-                False,
-                sconf['ip_version'],
-                sconf['cidr'],
-                sconf['dns_nameservers'],
-                net_id)
+            sconf = self.provider_config['networking']['subnet']
+            try:
+                subnet_id = self.subnet_creator.create_or_ensure_exists(
+                    sconf,
+                    sconf['name'],
+                    False,
+                    sconf['ip_version'],
+                    sconf['cidr'],
+                    sconf['dns_nameservers'],
+                    net_id)
+            except Exception as exception:
+                lgr.error('failed to create subnet ({0})'.format(
+                    exception))
+                return None
 
-            enconf = self.config['networking']['ext_network']
-            enet_id = self.network_creator.create_or_ensure_exists(
-                enconf,
-                enconf['name'],
-                False,
-                ext=True)
+            enconf = self.provider_config['networking']['ext_network']
+            try:
+                enet_id = self.network_creator.create_or_ensure_exists(
+                    enconf,
+                    enconf['name'],
+                    False,
+                    ext=True)
+            except Exception as exception:
+                lgr.error('failed to create external network ({0})'.format(
+                    exception))
+                return None
 
-            rconf = self.config['networking']['router']
-            self.router_creator.create_or_ensure_exists(
-                rconf,
-                rconf['name'],
-                False,
-                interfaces=[{'subnet_id': subnet_id}],
-                external_gateway_info={"network_id": enet_id})
+            rconf = self.provider_config['networking']['router']
+            try:
+                self.router_creator.create_or_ensure_exists(
+                    rconf,
+                    rconf['name'],
+                    False,
+                    interfaces=[{'subnet_id': subnet_id}],
+                    external_gateway_info={"network_id": enet_id})
+            except Exception as exception:
+                lgr.error('failed to create router ({0})'.format(
+                    exception))
+                return None
 
             insconf['nics'] = [{'net-id': net_id}]
 
         # Security group for Cosmo created instances
-        asgconf = self.config['networking']['agents_security_group']
-        asg_id, agent_sg_created = self.sg_creator.create_or_ensure_exists(
-            asgconf,
-            asgconf['name'],
-            True,
-            'Cosmo created machines',
-            [])
-
+        asgconf = self.provider_config['networking']['agents_security_group']
+        try:
+            asg_id, agent_sg_created = self.sg_creator.create_or_ensure_exists(
+                asgconf,
+                asgconf['name'],
+                True,
+                'Cosmo created machines',
+                [])
+        except Exception as exception:
+            lgr.error('failed to create agents security group ({0})'.format(
+                exception))
+            return None
         # Security group for Cosmo manager, allows created
         # instances -> manager communication
-        msgconf = self.config['networking']['management_security_group']
-        sg_rules = \
-            [{'port': p, 'group_id': asg_id} for p in INTERNAL_MGMT_PORTS] + \
-            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_MGMT_PORTS]
-        msg_id = self.sg_creator.create_or_ensure_exists(
-            msgconf,
-            msgconf['name'],
-            False,
-            'Cosmo Manager',
-            sg_rules)
+        try:
+            msgconf = self.provider_config['networking']['management_security_group']  # NOQA
+            sg_rules = \
+                [{'port': p, 'group_id': asg_id}
+                    for p in INTERNAL_MGMT_PORTS] + \
+                [{'port': p, 'cidr': msgconf['cidr']}
+                    for p in EXTERNAL_MGMT_PORTS]
+            msg_id = self.sg_creator.create_or_ensure_exists(
+                msgconf,
+                msgconf['name'],
+                False,
+                'Cosmo Manager',
+                sg_rules)
+        except Exception as exception:
+            lgr.error('failed to create mgmt security group ({0})'.format(
+                exception))
+            return None
 
         # Add rules to agent security group. (Happens here because we need
         # the management security group id)
         if agent_sg_created:
-            self.sg_creator.add_rules(asg_id,
-                                      [{'port': port, 'group_id': msg_id}
-                                       for port in INTERNAL_AGENT_PORTS])
+            try:
+                self.sg_creator.add_rules(asg_id,
+                                          [{'port': port, 'group_id': msg_id}
+                                           for port in INTERNAL_AGENT_PORTS])
+            except Exception as exception:
+                lgr.error('failed to add agent sg rules ({0})'.format(
+                    exception))
+                return None
 
         # Keypairs setup
-        mgr_kpconf = compute_config['management_server']['management_keypair']
-        self.keypair_creator.create_or_ensure_exists(
-            mgr_kpconf,
-            mgr_kpconf['name'],
-            False,
-            private_key_target_path=
-            mgr_kpconf['auto_generated']['private_key_target_path'] if
-            'auto_generated' in mgr_kpconf else None,
-            public_key_filepath=
-            mgr_kpconf['provided']['public_key_filepath'] if
-            'provided' in mgr_kpconf else None
-        )
-        agents_kpconf = compute_config['agent_servers']['agents_keypair']
-        self.keypair_creator.create_or_ensure_exists(
-            agents_kpconf,
-            agents_kpconf['name'],
-            False,
-            private_key_target_path=agents_kpconf['auto_generated']
-            ['private_key_target_path'] if 'auto_generated' in
-                                           agents_kpconf else None,
-            public_key_filepath=
-            agents_kpconf['provided']['public_key_filepath'] if
-            'provided' in agents_kpconf else None
-        )
+        try:
+            mgr_kpconf = compute_config['management_server']['management_keypair']  # NOQA
+            self.keypair_creator.create_or_ensure_exists(
+                mgr_kpconf,
+                mgr_kpconf['name'],
+                False,
+                private_key_target_path=
+                mgr_kpconf['auto_generated']['private_key_target_path'] if
+                'auto_generated' in mgr_kpconf else None,
+                public_key_filepath=
+                mgr_kpconf['provided']['public_key_filepath'] if
+                'provided' in mgr_kpconf else None
+            )
+        except Exception as exception:
+            lgr.error('failed to create mgmt keypair ({0})'.format(
+                exception))
+            return None
 
-        server_id = self.server_creator.create_or_ensure_exists(
-            insconf,
-            insconf['name'],
-            False,
-            {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
-            mgr_kpconf['name'],
-            msg_id if is_neutron_supported_region else msgconf['name']
-        )
+        try:
+            agents_kpconf = compute_config['agent_servers']['agents_keypair']
+            self.keypair_creator.create_or_ensure_exists(
+                agents_kpconf,
+                agents_kpconf['name'],
+                False,
+                private_key_target_path=agents_kpconf['auto_generated']
+                ['private_key_target_path'] if 'auto_generated' in
+                                               agents_kpconf else None,
+                public_key_filepath=
+                agents_kpconf['provided']['public_key_filepath'] if
+                'provided' in agents_kpconf else None
+            )
+        except Exception as exception:
+            lgr.error('failed to create agents keypair ({0})'.format(
+                exception))
+            return None
+
+        try:
+            server_id = self.server_creator.create_or_ensure_exists(
+                insconf,
+                insconf['name'],
+                False,
+                {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
+                mgr_kpconf['name'],
+                msg_id if is_neutron_supported_region else msgconf['name']
+            )
+        except Exception as exception:
+            lgr.error('failed to create mgmt server ({0})'.format(
+                exception))
+            return None
 
         if is_neutron_supported_region:
             network_name = nconf['name']
             if not insconf[EP_FLAG]:  # new server
                 self._attach_floating_ip(
-                    compute_config['management_server'], enet_id, server_id)
+                    compute_config['management_server'],
+                    enet_id, server_id)
             else:  # existing server
                 ips = self.server_creator.get_server_ips_in_network(
                     server_id, nconf['name'])
@@ -447,67 +368,17 @@ class CosmoOnOpenStackBootstrapper(object):
         ips = self.server_creator.get_server_ips_in_network(server_id,
                                                             network_name)
         private_ip, public_ip = ips[:2]
-        return public_ip, private_ip
 
-    def _attach_floating_ip(self, mgmt_server_conf, enet_id, server_id):
-        if 'floating_ip' in mgmt_server_conf:
-            floating_ip = mgmt_server_conf['floating_ip']
-        else:
-            floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
+        ssh_key = mgr_kpconf['auto_generated']['private_key_target_path'] \
+            if 'auto_generated' in mgr_kpconf else None
+        ssh_user = compute_config['management_server']['user_on_management']
 
-        lgr.info('attaching IP {0} to the instance'.format(
-            floating_ip))
-        self.server_creator.add_floating_ip(server_id, floating_ip)
-        return floating_ip
+        return public_ip, private_ip, ssh_key, ssh_user
 
-    def _get_private_key_path_from_keypair_config(self, keypair_config):
-        path = keypair_config['provided']['private_key_filepath'] if \
-            'provided' in keypair_config else \
-            keypair_config['auto_generated']['private_key_target_path']
-        return expanduser(path)
+    def _copy_files(self, mgmt_ip):
 
-    def _run_with_retries(self, command, retries=3, sleeper=3):
-
-        for execution in range(retries):
-            lgr.debug('running command: {0}'
-                      .format(command))
-            if not self.verbose_output:
-                with hide('running', 'stdout'):
-                    r = run(command)
-            else:
-                r = run(command)
-            if r.succeeded:
-                lgr.debug('successfully ran command: {0}'
-                          .format(command))
-                return
-            else:
-                lgr.warning('retrying command: {0}'
-                            .format(command))
-                time.sleep(sleeper)
-        lgr.error('failed to run: {0}, {1}'
-                  .format(command), r.stdout)
-        return
-
-    def _download_package(self, url, path):
-        self._run_with_retries('sudo wget %s -P %s' % (path, url))
-
-    def _unpack(self, path):
-        self._run_with_retries('sudo dpkg -i %s/*.deb' % path)
-
-    def _run(self, command):
-        self._run_with_retries(command)
-
-    def _bootstrap_manager(self,
-                           mgmt_ip,
-                           private_ip,
-                           bootstrap_using_script,
-                           dev_mode):
-        lgr.info('initializing manager on the machine at {0}'
-                 .format(mgmt_ip))
-        compute_config = self.config['compute']
-        cosmo_config = self.config['cloudify']
+        compute_config = self.provider_config['compute']
         management_server_config = compute_config['management_server']
-        mgr_kpconf = compute_config['management_server']['management_keypair']
 
         lgr.debug('creating ssh channel to machine...')
         try:
@@ -517,226 +388,23 @@ class CosmoOnOpenStackBootstrapper(object):
                     management_server_config['management_keypair']),
                 management_server_config['user_on_management'])
         except:
-            lgr.info('ssh channel creation failed. '
-                     'your private and public keys might not be matching or '
-                     'your security group might not be configured to allow '
-                     'connections to port {0}.'.format(SSH_CONNECT_PORT))
+            lgr.error('ssh channel creation failed. '
+                      'your private and public keys might not be matching or '
+                      'your security group might not be configured to allow '
+                      'connections to port {0}.'.format(SSH_CONNECT_PORT))
             return False
 
-        env.user = management_server_config['user_on_management']
-        env.warn_only = 0
-        env.abort_on_prompts = False
-        env.connection_attempts = 5
-        env.keepalive = 0
-        env.linewise = False
-        env.pool_size = 0
-        env.skip_bad_hosts = False
-        env.timeout = 10
-        env.forward_agent = True
-        env.status = False
-        env.key_filename = [mgr_kpconf['auto_generated']
-                           ['private_key_target_path']]
-
-        if not bootstrap_using_script:
-
-            try:
-                self._copy_files_to_manager(
-                    ssh,
-                    management_server_config['userhome_on_management'],
-                    self.config['keystone'],
-                    self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']),
-                    self.config['networking'])
-            except:
-                lgr.error('failed to copy keystone files')
-                return False
-
-            with settings(host_string=mgmt_ip), hide('running',
-                                                     'stderr',
-                                                     'aborts',
-                                                     'warnings'):
-
-                try:
-                    lgr.info('downloading cloudify components package...')
-                    self._download_package(
-                        CLOUDIFY_PACKAGES_PATH,
-                        cosmo_config['cloudify_components_package_url'])
-
-                    lgr.info('downloading cloudify package...')
-                    self._download_package(
-                        CLOUDIFY_PACKAGES_PATH,
-                        cosmo_config['cloudify_package_url'])
-                except:
-                    lgr.error('failed to download cloudify packages. '
-                              'please ensure packages exist in their '
-                              'configured locations in the config file')
-                    return False
-
-                try:
-                    lgr.info('unpacking cloudify packages...')
-                    self._unpack(
-                        CLOUDIFY_PACKAGES_PATH)
-                except:
-                    lgr.error('failed to unpack cloudify packages')
-                    return False
-
-                try:
-                    lgr.debug('verifying verbosity for installation process')
-                    v = self.verbose_output
-                    self.verbose_output = True
-
-                    lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
-                    self._run('sudo {0}/cloudify3-components-bootstrap.sh'
-                        .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
-
-                    self._run('sudo {0}/cloudify3-bootstrap.sh'
-                        .format(CLOUDIFY_PACKAGE_PATH))
-                except:
-                    lgr.error('failed to install manager')
-                    return False
-
-                if dev_mode:
-                    lgr.info('\n\n\n\n\nentering dev-mode. '
-                             'dev configuration will be applied...\n'
-                             'NOTE: an internet connection might be '
-                             'required...')
-
-                    dev_config = self.config['dev']
-                    # lgr.debug(json.dumps(dev_config, sort_keys=True,
-                    #           indent=4, separators=(',', ': ')))
-
-                    for key, value in dev_config.iteritems():
-                        virtualenv = value['virtualenv']
-                        lgr.debug('virtualenv is: ' + str(virtualenv))
-
-                        if 'preruns' in value:
-                            for command in value['preruns']:
-                                self._run(command)
-
-                        if 'downloads' in value:
-                            self._run('mkdir -p /tmp')
-                            for download in value['downloads']:
-                                lgr.debug('downloading: ' + download)
-                                self._run('sudo wget {0} -O '
-                                          '/tmp/module.tar.gz'
-                                          .format(download))
-                                self._run('sudo tar -C /tmp -xvf {0}'
-                                    .format('/tmp/module.tar.gz'))
-
-                        if 'installs' in value:
-                            src_wfs = False
-                            try:
-                                src_wfs = value['installs']['workflow_service']
-                            except:
-                                pass
-                            if src_wfs:
-                                lgr.debug('installing wfs')
-                                dst_wfs = ('{0}/cosmo-manager-*/'
-                                           'workflow-service/'
-                                           .format(virtualenv))
-                                lgr.debug('workflow service config..')
-                                self._run('sudo cp -R {0} {1}'
-                                          .format(src_wfs, dst_wfs))
-                            else:
-                                for install in value['installs']:
-                                    lgr.debug('installing: ' + install)
-                                    self._run('sudo {0}/bin/pip '
-                                              '--default-timeout'
-                                              '=45 install {1} --upgrade'
-                                              .format(virtualenv, install))
-
-                        if 'runs' in value:
-                            for command in value['runs']:
-                                self._run(command)
-
-                    lgr.info('managenet ip is {0}'.format(mgmt_ip))
-                lgr.debug('setting verbosity to previous state')
-                self.verbose_output = v
-                return True
-        else:
-            try:
-                self._copy_files_to_manager(
-                    ssh,
-                    management_server_config['userhome_on_management'],
-                    self.config['keystone'],
-                    self._get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']),
-                    self.config['networking'])
-
-                lgr.debug('Installing required packages'
-                          ' on manager')
-                self._exec_command_on_manager(ssh, 'echo "127.0.0.1 '
-                                                   '$(cat /etc/hostname)" | '
-                                                   'sudo tee -a /etc/hosts')
-                # note we call 'apt-get update' twice. there seems to be
-                # an issue an certain openstack environments where the first
-                # call seems to be using a different set of servers to do the
-                # update. the second calls seems to be after a certain
-                # mysterious cache was invalidated.
-                self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
-                                                   + SHELL_PIPE_TO_LOGGER)
-                self._exec_command_on_manager(ssh, 'sudo apt-get -y -q update'
-                                                   + SHELL_PIPE_TO_LOGGER)
-                self._exec_install_command_on_manager(ssh,
-                                                      'apt-get install -y -q '
-                                                      'python-dev git rsync '
-                                                      'openjdk-7-jdk maven '
-                                                      'python-pip'
-                                                      + SHELL_PIPE_TO_LOGGER)
-                self._exec_install_command_on_manager(ssh, 'pip install -q '
-                                                           'retrying requests '
-                                                           'timeout-decorator')
-
-                # use open sdk java 7
-                self._exec_command_on_manager(
-                    ssh,
-                    'sudo update-alternatives --set java '
-                    '/usr/lib/jvm/java-7-openjdk-amd64/jre/bin/java')
-
-                # configure and clone cosmo-manager from github
-                branch = cosmo_config['cloudify_branch']
-                workingdir = '{0}/cosmo-work'.format(
-                    management_server_config['userhome_on_management'])
-                version = cosmo_config['cloudify_branch']
-                configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
-
-                lgr.debug('cloning cosmo on manager')
-                self._exec_command_on_manager(ssh, 'mkdir -p {0}'
-                    .format(workingdir))
-                self._exec_command_on_manager(ssh,
-                                              'git clone https://github.com/'
-                                              'CloudifySource/cosmo-manager'
-                                              '.git {0}/cosmo-manager'
-                                              ' --depth 1'
-                    .format(workingdir))
-                self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
-                                                   'git checkout {1} )'
-                    .format(workingdir, branch))
-
-                lgr.debug('running the manager bootstrap script '
-                          'remotely')
-                run_script_command = 'DEBIAN_FRONTEND=noninteractive ' \
-                                     'python2.7 {0}/cosmo-manager/vagrant/' \
-                                     'bootstrap_lxc_manager.py ' \
-                                     '--working_dir={0} --cosmo_version={1} ' \
-                                     '--config_dir={2} ' \
-                                     '--install_openstack_provisioner ' \
-                                     '--install_logstash ' \
-                                     '--management_ip={3}' \
-                                     .format(workingdir,
-                                             version,
-                                             configdir,
-                                             private_ip)
-                run_script_command += ' {0}'.format(SHELL_PIPE_TO_LOGGER)
-                self._exec_command_on_manager(ssh, run_script_command)
-
-                lgr.debug('rebuilding cosmo on manager')
-            except:
-                lgr.error('failed to install manager using the script')
-                return False
-            finally:
-                ssh.close()
-            return True
+        try:
+            self._copy_files_to_manager(
+                ssh,
+                management_server_config['userhome_on_management'],
+                self.provider_config['keystone'],
+                self._get_private_key_path_from_keypair_config(
+                    compute_config['agent_servers']['agents_keypair']),
+                self.provider_config['networking'])
+        except:
+            lgr.error('failed to copy keystone files')
+            return False
 
     def _create_ssh_channel_with_mgmt(self, mgmt_ip, management_key_path,
                                       user_on_management):
@@ -760,6 +428,23 @@ class CosmoOnOpenStackBootstrapper(object):
                 time.sleep(5)
         lgr.error('Failed to ssh connect to management server ({0}'
                   .format(err))
+
+    def _attach_floating_ip(self, mgmt_server_conf, enet_id, server_id):
+        if 'floating_ip' in mgmt_server_conf:
+            floating_ip = mgmt_server_conf['floating_ip']
+        else:
+            floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
+
+        lgr.info('attaching IP {0} to the instance'.format(
+            floating_ip))
+        self.server_creator.add_floating_ip(server_id, floating_ip)
+        return floating_ip
+
+    def _get_private_key_path_from_keypair_config(self, keypair_config):
+        path = keypair_config['provided']['private_key_filepath'] if \
+            'provided' in keypair_config else \
+            keypair_config['auto_generated']['private_key_target_path']
+        return expanduser(path)
 
     def _copy_files_to_manager(self, ssh, userhome_on_management,
                                keystone_config, agents_key_path,
@@ -785,7 +470,7 @@ class CosmoOnOpenStackBootstrapper(object):
 
     def _make_keystone_file(self, tempdir, keystone_config):
         # put default region in keystone_config file
-        keystone_config['region'] = self.config['compute']['region']
+        keystone_config['region'] = self.provider_config['compute']['region']
         keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
         with open(keystone_file_path, 'w') as f:
             json.dump(keystone_config, f)

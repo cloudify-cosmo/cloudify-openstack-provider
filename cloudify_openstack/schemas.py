@@ -14,7 +14,7 @@
 #    * See the License for the specific language governing permissions and
 #    * limitations under the License.
 
-OPENSTACK_SCHEMA = {
+PROVIDER_SCHEMA = {
     "type":"object",
     "required":[
         'keystone',
@@ -26,8 +26,12 @@ OPENSTACK_SCHEMA = {
         "cloudify": {
             "type":"object",        
             "required":[
+                'cloudify_branch',
+                'cloudify_components_package_path',
                 'cloudify_components_package_url',
+                'cloudify_package_path',
                 'cloudify_package_url',
+                'cloudify_packages_path'
             ],
             "properties":{
                 "cloudify_branch": {
