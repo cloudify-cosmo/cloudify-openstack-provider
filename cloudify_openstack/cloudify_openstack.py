@@ -26,7 +26,6 @@ import json
 import tempfile
 import paramiko
 import socket
-import sys
 import errno
 from os.path import expanduser
 from scp import SCPClient
@@ -35,7 +34,6 @@ import logging.config
 from cosmo_cli.cosmo_cli import logger, _set_global_verbosity_level
 
 # Validator
-from jsonschema import ValidationError, Draft4Validator
 from IPy import IP
 
 # OpenStack
@@ -67,7 +65,16 @@ lgr, flgr = logger()
 
 def provision(provider_config, is_verbose_output=False,
               keep_up=False):
-
+    """
+    provisions resources in the provider before bootstrapping
+    the management server. This can include (for instance)
+    network, keypairs, security groups and an instance.
+    at the very least, an instance is required.
+    This should return
+    a hash containing the instance's attached ip, its private ip,
+    its ssh key path and its ssh user.
+    (upon error, this should return None)
+    """
     _set_global_verbosity_level(is_verbose_output)
     # implement the resource provisioning process.
     connector = OpenStackConnector(provider_config)
@@ -82,19 +89,51 @@ def provision(provider_config, is_verbose_output=False,
         sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
     else:
         sg_creator = OpenStackNovaSecurityGroupCreator(connector)
-    bootstrapper = CosmoOnOpenStackBootstrapper(
+    provisioner = CosmoOnOpenStackProvisioner(
         provider_config, network_creator, subnet_creator, router_creator,
         sg_creator, floating_ip_creator, keypair_creator, server_creator,
         server_killer)
-    mgmt_ip, private_ip, ssh_key, ssh_user = bootstrapper._create_topology()
+    mgmt_ip, private_ip, ssh_key, ssh_user = provisioner._create_topology()
     if mgmt_ip is not None:
-        r = bootstrapper._copy_files(mgmt_ip)
+        r = provisioner._copy_files(mgmt_ip)
         if r is not None:
             return mgmt_ip, private_ip, ssh_key, ssh_user
 
 
-def teardown(provider_config, management_ip, is_verbose_output=False):
+def validate(provider_config, schema=None, is_verbose_output=False):
+    """
+    validates provider specific resources and configuration.
+    This can, for instance, include quota validations, config file
+    validations, access validations, etc...
+    This should either return True if the validations were successful,
+    or False, if they weren't.
+    """
+    _set_global_verbosity_level(is_verbose_output)
 
+    global validated
+    validated = True
+    verifier = OpenStackValidator()
+
+    lgr.debug('validating provider cidrs in config file...')
+    verifier._validate_cidr('networking.subnet.cidr',
+                            provider_config['networking']
+                            ['subnet']['cidr'])
+    verifier._validate_cidr('networking.management_security_group.cidr',
+                            provider_config['networking']
+                            ['management_security_group']['cidr'])
+
+    if validated:
+        return True
+    else:
+        return False
+
+
+def teardown(provider_config, management_ip, is_verbose_output=False):
+    """
+    tears down whatever was provisioned in provision().
+    must return True on successful teardown, and False otherwise.
+    """
+    _set_global_verbosity_level(is_verbose_output)
     lgr.info('NOTE: currently only instance teardown is implemented!')
 
     connector = OpenStackConnector(provider_config)
@@ -110,32 +149,8 @@ def teardown(provider_config, management_ip, is_verbose_output=False):
     #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
     killer = CosmoOnOpenStackKiller(
         provider_config, management_ip, server_killer)
-    killer.do()
-
-
-def _validate_provider(provider_config, schema=None, is_verbose_output=False):
-
-    _set_global_verbosity_level(is_verbose_output)
-    if schema is not None:
-        global validated
-        validated = True
-        verifier = OpenStackConfigFileValidator()
-
-        lgr.info('validating provider configuration file...')
-        verifier._validate_cidr('networking.subnet.cidr',
-                                provider_config['networking']
-                                ['subnet']['cidr'])
-        verifier._validate_cidr('networking.management_security_group.cidr',
-                                provider_config['networking']
-                                ['management_security_group']['cidr'])
-
-        if validated:
-            lgr.info('provider configuration file validated successfully')
-        else:
-            lgr.error('provider configuration validation failed!')
-            sys.exit(1)
-    else:
-        lgr.warning('no schema provided to validate against!')
+    killer._kill_topology()
+    return True
 
 
 def _mkdir_p(path):
@@ -149,20 +164,7 @@ def _mkdir_p(path):
         raise
 
 
-class OpenStackConfigFileValidator:
-
-    def _validate_schema(self, provider_config, schema):
-        global validated
-        v = Draft4Validator(schema)
-        if v.iter_errors(provider_config):
-            errors = ';\n'.join('config file validation error found at key:'
-                                ' %s, %s' % ('.'.join(e.path), e.message)
-                                for e in v.iter_errors(provider_config))
-        try:
-            v.validate(provider_config)
-        except ValidationError:
-            validated = False
-            lgr.error('{0}'.format(errors))
+class OpenStackValidator:
 
     def _validate_cidr(self, field, cidr):
         global validated
@@ -174,7 +176,7 @@ class OpenStackConfigFileValidator:
                       ' {0}. {1}'.format(field, e.message))
 
 
-class CosmoOnOpenStackBootstrapper(object):
+class CosmoOnOpenStackProvisioner(object):
     """ Bootstraps Cosmo on OpenStack """
 
     def __init__(self, provider_config, network_creator, subnet_creator,
@@ -886,9 +888,6 @@ class CosmoOnOpenStackKiller(object):
 
         global verbose_output
         self.verbose_output = verbose_output
-
-    def do(self):
-        self._kill_topology()
 
     def _kill_topology(self):
         lgr.debug('retrieving server object for ip: {0}'.format(self.mgmt_ip))
