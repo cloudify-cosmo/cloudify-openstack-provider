@@ -506,7 +506,7 @@ class CosmoOnOpenStackBootstrapper(object):
                  .format(mgmt_ip))
         compute_config = self.config['compute']
         cosmo_config = self.config['cloudify']
-        management_server_config = compute_config['management_server']
+        mgmt_server_config = compute_config['management_server']
         mgr_kpconf = compute_config['management_server']['management_keypair']
 
         lgr.debug('creating ssh channel to machine...')
@@ -514,8 +514,8 @@ class CosmoOnOpenStackBootstrapper(object):
             ssh = self._create_ssh_channel_with_mgmt(
                 mgmt_ip,
                 self._get_private_key_path_from_keypair_config(
-                    management_server_config['management_keypair']),
-                management_server_config['user_on_management'])
+                    mgmt_server_config['management_keypair']),
+                mgmt_server_config['user_on_management'])
         except:
             lgr.info('ssh channel creation failed. '
                      'your private and public keys might not be matching or '
@@ -523,7 +523,7 @@ class CosmoOnOpenStackBootstrapper(object):
                      'connections to port {0}.'.format(SSH_CONNECT_PORT))
             return False
 
-        env.user = management_server_config['user_on_management']
+        env.user = mgmt_server_config['user_on_management']
         env.warn_only = 0
         env.abort_on_prompts = False
         env.connection_attempts = 5
@@ -542,7 +542,7 @@ class CosmoOnOpenStackBootstrapper(object):
             try:
                 self._copy_files_to_manager(
                     ssh,
-                    management_server_config['userhome_on_management'],
+                    mgmt_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
                         compute_config['agent_servers']['agents_keypair']),
@@ -589,8 +589,9 @@ class CosmoOnOpenStackBootstrapper(object):
                     self._run('sudo {0}/cloudify3-components-bootstrap.sh'
                         .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
 
-                    self._run('sudo {0}/cloudify3-bootstrap.sh'
-                        .format(CLOUDIFY_PACKAGE_PATH))
+                    celery_user = mgmt_server_config['user_on_management']
+                    self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
+                        .format(CLOUDIFY_PACKAGE_PATH, celery_user, mgmt_ip))
                 except:
                     lgr.error('failed to install manager')
                     return False
@@ -657,7 +658,7 @@ class CosmoOnOpenStackBootstrapper(object):
             try:
                 self._copy_files_to_manager(
                     ssh,
-                    management_server_config['userhome_on_management'],
+                    mgmt_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
                         compute_config['agent_servers']['agents_keypair']),
@@ -696,7 +697,7 @@ class CosmoOnOpenStackBootstrapper(object):
                 # configure and clone cosmo-manager from github
                 branch = cosmo_config['cloudify_branch']
                 workingdir = '{0}/cosmo-work'.format(
-                    management_server_config['userhome_on_management'])
+                    mgmt_server_config['userhome_on_management'])
                 version = cosmo_config['cloudify_branch']
                 configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
 
