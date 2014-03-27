@@ -532,7 +532,7 @@ class CosmoOnOpenStackBootstrapper(object):
         env.forward_agent = True
         env.status = False
         env.key_filename = [mgr_kpconf['auto_generated']
-                           ['private_key_target_path']]
+                            ['private_key_target_path']]
 
         if not bootstrap_using_script:
             try:
@@ -722,7 +722,7 @@ class CosmoOnOpenStackBootstrapper(object):
                                               'CloudifySource/cosmo-manager'
                                               '.git {0}/cosmo-manager'
                                               ' --depth 1'
-                    .format(workingdir))
+                                              .format(workingdir))
                 self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
                                                    'git checkout {1} )'
                                                    .format(workingdir, branch))
