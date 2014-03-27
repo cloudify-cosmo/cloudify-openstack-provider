@@ -626,8 +626,13 @@ class CosmoOnOpenStackBootstrapper(object):
 
                         if 'installs' in value:
                             src_wfs = False
+                            src_orc = False
                             try:
                                 src_wfs = value['installs']['workflow_service']
+                            except:
+                                pass
+                            try:
+                                src_orc = value['installs']['orchestrator']
                             except:
                                 pass
                             if src_wfs:
@@ -638,6 +643,17 @@ class CosmoOnOpenStackBootstrapper(object):
                                 lgr.debug('workflow service config..')
                                 self._run('sudo cp -R {0} {1}'
                                           .format(src_wfs, dst_wfs))
+                            elif src_orc:
+                                lgr.debug('installing orchestrator')
+                                dst_orc = ('{0}/resources/'.format(virtualenv))
+                                lgr.debug('orchestrator config..')
+                                self._run('sudo cp -R {0} {1}'
+                                          .format('{0}/cloudify/'.format(src_orc),  # NOQA
+                                                  dst_orc))
+                                self._run('sudo cp -R {0} {1}'
+                                          .format('{0}/org/cloudifysource/cosmo/dsl/alias-mappings.yaml'  # NOQA
+                                                  .format(src_orc),  # NOQA
+                                                  '{0}/cloudify/'.format(dst_orc)))  # NOQA
                             else:
                                 for install in value['installs']:
                                     lgr.debug('installing: ' + install)
