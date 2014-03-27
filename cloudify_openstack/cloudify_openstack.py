@@ -295,9 +295,7 @@ class CosmoOnOpenStackDriver(object):
                                                 private_ip,
                                                 bootstrap_using_script,
                                                 dev_mode)
-        ##TEMP
-        installed = True
-        ##TEMP
+
         if mgmt_ip and installed:
             return mgmt_ip, self.provider_context
         else:
