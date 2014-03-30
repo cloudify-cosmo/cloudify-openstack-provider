@@ -75,7 +75,7 @@ CLOUDIFY_PACKAGE_PATH = '/cloudify3'
 verbose_output = False
 
 
-#initialize logger
+# initialize logger
 if os.path.isfile(config.LOG_DIR):
     sys.exit('file {0} exists - cloudify log directory cannot be created '
              'there. please remove the file and try again.'
@@ -542,10 +542,9 @@ class CosmoOnOpenStackBootstrapper(object):
         env.forward_agent = True
         env.status = False
         env.key_filename = [mgr_kpconf['auto_generated']
-                           ['private_key_target_path']]
+                            ['private_key_target_path']]
 
         if not bootstrap_using_script:
-
             try:
                 self._copy_files_to_manager(
                     ssh,
@@ -635,12 +634,17 @@ class CosmoOnOpenStackBootstrapper(object):
                                           '/tmp/module.tar.gz'
                                           .format(download))
                                 self._run('sudo tar -C /tmp -xvf {0}'
-                                    .format('/tmp/module.tar.gz'))
+                                          .format('/tmp/module.tar.gz'))
 
                         if 'installs' in value:
                             src_wfs = False
+                            src_orc = False
                             try:
                                 src_wfs = value['installs']['workflow_service']
+                            except:
+                                pass
+                            try:
+                                src_orc = value['installs']['orchestrator']
                             except:
                                 pass
                             if src_wfs:
@@ -651,6 +655,17 @@ class CosmoOnOpenStackBootstrapper(object):
                                 lgr.debug('workflow service config..')
                                 self._run('sudo cp -R {0} {1}'
                                           .format(src_wfs, dst_wfs))
+                            elif src_orc:
+                                lgr.debug('installing orchestrator')
+                                dst_orc = ('{0}/resources/'.format(virtualenv))
+                                lgr.debug('orchestrator config..')
+                                self._run('sudo cp -R {0} {1}'
+                                          .format('{0}/cloudify/'.format(src_orc),  # NOQA
+                                                  dst_orc))
+                                self._run('sudo cp -R {0} {1}'
+                                          .format('{0}/org/cloudifysource/cosmo/dsl/alias-mappings.yaml'  # NOQA
+                                                  .format(src_orc),  # NOQA
+                                                  '{0}/cloudify/'.format(dst_orc)))  # NOQA
                             else:
                                 for install in value['installs']:
                                     lgr.debug('installing: ' + install)
@@ -716,16 +731,16 @@ class CosmoOnOpenStackBootstrapper(object):
 
                 lgr.debug('cloning cosmo on manager')
                 self._exec_command_on_manager(ssh, 'mkdir -p {0}'
-                    .format(workingdir))
+                                              .format(workingdir))
                 self._exec_command_on_manager(ssh,
                                               'git clone https://github.com/'
                                               'CloudifySource/cosmo-manager'
                                               '.git {0}/cosmo-manager'
                                               ' --depth 1'
-                    .format(workingdir))
+                                              .format(workingdir))
                 self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
                                                    'git checkout {1} )'
-                    .format(workingdir, branch))
+                                                   .format(workingdir, branch))
 
                 lgr.debug('running the manager bootstrap script '
                           'remotely')
@@ -758,8 +773,8 @@ class CosmoOnOpenStackBootstrapper(object):
         # TODO: support fingerprint in config json
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        #trying to ssh connect to management server. Using retries since it
-        #might take some time to find routes to host
+        # trying to ssh connect to management server. Using retries since it
+        # might take some time to find routes to host
         for retry in range(0, SSH_CONNECT_RETRIES):
             try:
                 ssh.connect(mgmt_ip, username=user_on_management,
