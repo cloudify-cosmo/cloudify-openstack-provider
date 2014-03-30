@@ -71,6 +71,7 @@ DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 CLOUDIFY_PACKAGES_PATH = '/cloudify'
 CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify3-components'
 CLOUDIFY_PACKAGE_PATH = '/cloudify3'
+AGENT_PACKAGES_PATH = '/cloudify-agents'
 
 verbose_output = False
 
@@ -582,6 +583,16 @@ class CosmoOnOpenStackBootstrapper(object):
                               'configured location in the config file')
                     return False
 
+                lgr.info('downloading cloudify ubuntu agent...')
+                r = self._download_package(
+                    AGENT_PACKAGES_PATH,
+                    cosmo_config['cloudify_ubuntu_agent_url'])
+                if not r:
+                    lgr.error('failed to download cloudify ubuntu agent. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
+                    return False
+
                 lgr.info('unpacking cloudify packages...')
                 r = self._unpack(
                     CLOUDIFY_PACKAGES_PATH)
@@ -603,11 +614,20 @@ class CosmoOnOpenStackBootstrapper(object):
                 celery_user = mgmt_server_config['user_on_management']
                 r = self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
                               .format(CLOUDIFY_PACKAGE_PATH,
-                                      celery_user, mgmt_ip))
+                                      celery_user, private_ip))
                 if not r:
                     lgr.error('failed to install cloudify')
                     return False
 
+                self.verbose_output = False
+                lgr.info('unpacking cloudify agent...')
+                r = self._unpack(
+                    AGENT_PACKAGES_PATH)
+                if not r:
+                    lgr.error('failed to unpack cloudify agent')
+                    return False
+
+                self.verbose_output = True
                 if dev_mode:
                     lgr.info('\n\n\n\n\nentering dev-mode. '
                              'dev configuration will be applied...\n'

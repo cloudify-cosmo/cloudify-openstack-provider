@@ -61,10 +61,9 @@ compute:
 
 cloudify:
     cloudify_branch: develop
-    #cloudify_components_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3-components_3.0.0_amd64.deb
     cloudify_components_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify3-components_3.0.0_amd64.deb
-    #cloudify_package_url: https://s3-us-west-1.amazonaws.com/gigaspaces-cosmo-packages/cloudify3_3.0.0_amd64.deb
     cloudify_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify3_3.0.0_amd64.deb
+    cloudify_ubuntu_agent_url: https://dl.dropboxusercontent.com/u/407576/ubuntu-agent_3.0.0_amd64.deb
 
 #this section only applies to bootstrapping in --dev-mode
 dev:
