@@ -321,9 +321,9 @@ class CosmoOnOpenStackBootstrapper(object):
                 # try:
                 server = self.server_killer.list_objects_by_ip(mgmt_ip)
                 # except:
-                    # servers = self.server_killer.list_objects_with_name(
-                        # provider_config['compute']
-                                # ['management_server']['instance']['name'])
+                # servers = self.server_killer.list_objects_with_name(
+                # provider_config['compute']
+                # ['management_server']['instance']['name'])
                 if server is not None:
                     self.server_killer.kill(server)
                 else:
