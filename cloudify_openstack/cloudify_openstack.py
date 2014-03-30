@@ -471,35 +471,39 @@ class CosmoOnOpenStackDriver(object):
                     resource_data['id'], **kwargs)
                 all_conflicts[resource_name] = conflicts
 
+        def get_known_resource_id(resource_name):
+            return resources[resource_name]['id']
+
         check_for_conflicts('floating_ip', self.floating_ip_controller)
         check_for_conflicts('management_server', self.server_controller)
         check_for_conflicts('agents_keypair', self.keypair_controller)
         check_for_conflicts('management_keypair', self.keypair_controller)
 
-        known_servers = {resources['management_server']['id']}
+        known_server_id = get_known_resource_id('management_server')
         check_for_conflicts('management_security_group', self.sg_controller,
-                            servers_for_deletion=known_servers)
+                            servers_for_deletion={known_server_id})
         check_for_conflicts('agents_security_group', self.sg_controller,
-                            servers_for_deletion=known_servers)
+                            servers_for_deletion={known_server_id})
 
-        networks_for_deletion = {resources['int_network']['id']}
-        floating_ips_for_deletion = {resources['floating_ip']['id']}
+        known_network_id = get_known_resource_id('int_network')
+        known_floating_ip_id = get_known_resource_id('floating_ip')
         check_for_conflicts('router', self.router_controller,
-                            networks_for_deletion=networks_for_deletion,
+                            networks_for_deletion={known_network_id},
                             floating_ips_for_deletion=
-                            floating_ips_for_deletion)
+                            {known_floating_ip_id})
 
         #Skipping ext_network - currently not automatically created/deleted.
 
-        servers_for_deletion = {resources['management_server']['id']}
-        routers_for_deletion = {resources['router']['id']}
+        known_router_id = get_known_resource_id('router')
         check_for_conflicts('subnet', self.subnet_controller,
-                            servers_for_deletion=servers_for_deletion,
-                            routers_for_deletion=routers_for_deletion)
+                            servers_for_deletion={known_server_id},
+                            routers_for_deletion={known_router_id})
 
-        subnets_for_deletion = {resources['subnet']['id']}
+        known_subnet_id = get_known_resource_id('subnet')
         check_for_conflicts('int_network', self.network_controller,
-                            subnets_for_deletion=subnets_for_deletion)
+                            subnets_for_deletion={known_subnet_id})
+
+        self._propagate_conflicts_on_known_resources(resources, all_conflicts)
 
         def format_conflict_print(conflicted_resource_name,
                                   conflicts):
@@ -526,6 +530,31 @@ class CosmoOnOpenStackDriver(object):
                      '{0}'.format(formatted_conflict_lines_str))
             return True
         return False
+
+    def _propagate_conflicts_on_known_resources(self, resources,
+                                                all_conflicts):
+        if len(all_conflicts['management_server']) > 0:
+            known_server_id = resources['management_server']['id']
+            all_conflicts['management_security_group']['servers'].append(
+                known_server_id)
+            all_conflicts['agents_security_group']['servers'].append(
+                known_server_id)
+            all_conflicts['subnet']['servers'].append(known_server_id)
+
+        if len(all_conflicts['floating_ip']) > 0:
+            all_conflicts['router']['floating_ips'].append(
+                resources['floating_ip']['id'])
+
+        if len(all_conflicts['int_network']) > 0 or \
+           len(all_conflicts['subnet']) > 0 or \
+           len(all_conflicts['router']) > 0:
+            #those three go down or stay up together
+            all_conflicts['router']['networks'].append(
+                resources['int_network']['id'])
+            all_conflicts['subnet']['routers'].append(
+                resources['router']['id'])
+            all_conflicts['int_network']['subnets'].append(
+                resources['subnet']['id'])
 
     def _delete_resources(self, resources):
         deleted_resources = []
@@ -1041,6 +1070,7 @@ class BaseController(object):
             except Exception as e:
                 #Checking if resource doesn't exist
                 if self._is_openstack_404_error(e):
+                    lgr.debug("resource {0} wasn't found".format(resource_id))
                     return False
 
                 #Different error occurred. Retry or give up.
@@ -1052,6 +1082,7 @@ class BaseController(object):
 
             try:
                 self._wait_for_resource_to_be_deleted(resource_id)
+                lgr.debug('resource {0} terminated'.format(resource_id))
                 return True
             except Exception as e:
                 lgr.debug('Error while waiting for resource {0} of type {1}  '
@@ -1072,7 +1103,6 @@ class BaseController(object):
                 lgr.debug('resource {0} is still up'.format(resource_id))
             except Exception as e:
                 if self._is_openstack_404_error(e):
-                    lgr.debug('resource {0} terminated'.format(resource_id))
                     return
                 raise
             time.sleep(2)
@@ -1334,9 +1364,9 @@ class OpenStackRouterController(BaseControllerNeutron):
         # made, as it is expected for those networks to be go through
         # deletion before the router does.
         networks_for_deletion = kwargs.get('networks_for_deletion', {})
-        network_conflicts = [port for port in self.neutron_client.list_ports(
-            device_id=router_id)['ports'] if port['network_id'] not in
-            networks_for_deletion]
+        network_conflicts = [port['id'] for port in self.neutron_client
+                            .list_ports(device_id=router_id)['ports'] if
+                             port['network_id'] not in networks_for_deletion]
 
         floating_ips_for_deletion = kwargs.get('floating_ips_for_deletion', {})
         floating_ips_conflicts = [floating_ip['id'] for floating_ip in
