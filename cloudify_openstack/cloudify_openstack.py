@@ -614,11 +614,12 @@ class CosmoOnOpenStackBootstrapper(object):
                 celery_user = mgmt_server_config['user_on_management']
                 r = self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
                               .format(CLOUDIFY_PACKAGE_PATH,
-                                      celery_user, mgmt_ip))
+                                      celery_user, private_ip))
                 if not r:
                     lgr.error('failed to install cloudify')
                     return False
 
+                self.verbose_output = False
                 lgr.info('unpacking cloudify agent...')
                 r = self._unpack(
                     AGENT_PACKAGES_PATH)
@@ -626,6 +627,7 @@ class CosmoOnOpenStackBootstrapper(object):
                     lgr.error('failed to unpack cloudify agent')
                     return False
 
+                self.verbose_output = True
                 if dev_mode:
                     lgr.info('\n\n\n\n\nentering dev-mode. '
                              'dev configuration will be applied...\n'
