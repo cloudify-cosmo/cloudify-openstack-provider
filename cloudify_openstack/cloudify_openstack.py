@@ -62,6 +62,9 @@ SSH_CONNECT_PORT = 22
 
 SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 
+FABRIC_RETRIES = 3
+FABRIC_SLEEPTIME = 3
+
 CONFIG_FILE_NAME = 'cloudify-config.yaml'
 DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
@@ -315,7 +318,12 @@ class CosmoOnOpenStackBootstrapper(object):
             else:
                 lgr.info('tearing down manager server'
                          ' due to bootstrap failure')
+                # try:
                 server = self.server_killer.list_objects_by_ip(mgmt_ip)
+                # except:
+                # servers = self.server_killer.list_objects_with_name(
+                # provider_config['compute']
+                # ['management_server']['instance']['name'])
                 if server is not None:
                     self.server_killer.kill(server)
                 else:
@@ -463,7 +471,8 @@ class CosmoOnOpenStackBootstrapper(object):
             keypair_config['auto_generated']['private_key_target_path']
         return expanduser(path)
 
-    def _run_with_retries(self, command, retries=3, sleeper=3):
+    def _run_with_retries(self, command, retries=FABRIC_RETRIES,
+                          sleeper=FABRIC_SLEEPTIME):
 
         for execution in range(retries):
             lgr.debug('running command: {0}'
@@ -476,23 +485,24 @@ class CosmoOnOpenStackBootstrapper(object):
             if r.succeeded:
                 lgr.debug('successfully ran command: {0}'
                           .format(command))
-                return
+                return True
             else:
                 lgr.warning('retrying command: {0}'
                             .format(command))
                 time.sleep(sleeper)
         lgr.error('failed to run: {0}, {1}'
-                  .format(command), r.stdout)
-        return
+                  .format(command, r.stderr))
+        return False
 
     def _download_package(self, url, path):
-        self._run_with_retries('sudo wget %s -P %s' % (path, url))
+        return self._run_with_retries('sudo wget -T 30 {0} -P {1}'
+                                      .format(path, url))
 
     def _unpack(self, path):
-        self._run_with_retries('sudo dpkg -i %s/*.deb' % path)
+        return self._run_with_retries('sudo dpkg -i {0}/*.deb'.format(path))
 
     def _run(self, command):
-        self._run_with_retries(command)
+        return self._run_with_retries(command)
 
     def _bootstrap_manager(self,
                            mgmt_ip,
@@ -521,7 +531,7 @@ class CosmoOnOpenStackBootstrapper(object):
             return False
 
         env.user = mgmt_server_config['user_on_management']
-        env.warn_only = 0
+        env.warn_only = True
         env.abort_on_prompts = False
         env.connection_attempts = 5
         env.keepalive = 0
@@ -552,45 +562,50 @@ class CosmoOnOpenStackBootstrapper(object):
                                                      'aborts',
                                                      'warnings'):
 
-                try:
-                    lgr.info('downloading cloudify components package...')
-                    self._download_package(
-                        CLOUDIFY_PACKAGES_PATH,
-                        cosmo_config['cloudify_components_package_url'])
-
-                    lgr.info('downloading cloudify package...')
-                    self._download_package(
-                        CLOUDIFY_PACKAGES_PATH,
-                        cosmo_config['cloudify_package_url'])
-                except:
-                    lgr.error('failed to download cloudify packages. '
-                              'please ensure packages exist in their '
-                              'configured locations in the config file')
+                lgr.info('downloading cloudify components package...')
+                r = self._download_package(
+                    CLOUDIFY_PACKAGES_PATH,
+                    cosmo_config['cloudify_components_package_url'])
+                if not r:
+                    lgr.error('failed to download components package. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
                     return False
 
-                try:
-                    lgr.info('unpacking cloudify packages...')
-                    self._unpack(
-                        CLOUDIFY_PACKAGES_PATH)
-                except:
+                lgr.info('downloading cloudify package...')
+                r = self._download_package(
+                    CLOUDIFY_PACKAGES_PATH,
+                    cosmo_config['cloudify_package_url'])
+                if not r:
+                    lgr.error('failed to download cloudify package. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
+                    return False
+
+                lgr.info('unpacking cloudify packages...')
+                r = self._unpack(
+                    CLOUDIFY_PACKAGES_PATH)
+                if not r:
                     lgr.error('failed to unpack cloudify packages')
                     return False
 
-                try:
-                    lgr.debug('verifying verbosity for installation process')
-                    v = self.verbose_output
-                    self.verbose_output = True
+                lgr.debug('verifying verbosity for installation process')
+                v = self.verbose_output
+                self.verbose_output = True
 
-                    lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
-                    self._run('sudo {0}/cloudify3-components-bootstrap.sh'
+                lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
+                r = self._run('sudo {0}/cloudify3-components-bootstrap.sh'
                               .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
+                if not r:
+                    lgr.error('failed to install components')
+                    return False
 
-                    celery_user = mgmt_server_config['user_on_management']
-                    self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
+                celery_user = mgmt_server_config['user_on_management']
+                r = self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
                               .format(CLOUDIFY_PACKAGE_PATH,
                                       celery_user, mgmt_ip))
-                except:
-                    lgr.error('failed to install manager')
+                if not r:
+                    lgr.error('failed to install cloudify')
                     return False
 
                 if dev_mode:
