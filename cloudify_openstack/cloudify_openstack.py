@@ -62,17 +62,21 @@ SSH_CONNECT_PORT = 22
 
 SHELL_PIPE_TO_LOGGER = ' |& logger -i -t cosmo-bootstrap -p local0.info'
 
+FABRIC_RETRIES = 3
+FABRIC_SLEEPTIME = 3
+
 CONFIG_FILE_NAME = 'cloudify-config.yaml'
 DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
 CLOUDIFY_PACKAGES_PATH = '/cloudify'
 CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify3-components'
 CLOUDIFY_PACKAGE_PATH = '/cloudify3'
+AGENT_PACKAGES_PATH = '/cloudify-agents'
 
 verbose_output = False
 
 
-#initialize logger
+# initialize logger
 if os.path.isfile(config.LOG_DIR):
     sys.exit('file {0} exists - cloudify log directory cannot be created '
              'there. please remove the file and try again.'
@@ -303,10 +307,14 @@ class CosmoOnOpenStackDriver(object):
                 lgr.info('manager server will remain up')
                 sys.exit(1)
             else:
-                lgr.info('tearing down topology'
-                         ' due to bootstrap failure')
-                self.delete_topology()
-                sys.exit(1)
+                if keep_up:
+                    lgr.info('manager server will remain up')
+                    sys.exit(1)
+                else:
+                    lgr.info('tearing down topology'
+                             ' due to bootstrap failure')
+                    self.delete_topology()
+                    sys.exit(1)
 
     def create_topology(self):
         resources = {}
@@ -493,7 +501,7 @@ class CosmoOnOpenStackDriver(object):
                             floating_ips_for_deletion=
                             {known_floating_ip_id})
 
-        #Skipping ext_network - currently not automatically created/deleted.
+        # Skipping ext_network - currently not automatically created/deleted.
 
         known_router_id = get_known_resource_id('router')
         check_for_conflicts('subnet', self.subnet_controller,
@@ -549,7 +557,7 @@ class CosmoOnOpenStackDriver(object):
         if len(all_conflicts['int_network']) > 0 or \
            len(all_conflicts['subnet']) > 0 or \
            len(all_conflicts['router']) > 0:
-            #those three go down or stay up together
+            # those three go down or stay up together
             all_conflicts['router']['networks'].append(
                 resources['int_network']['id'])
             all_conflicts['subnet']['routers'].append(
@@ -575,7 +583,7 @@ class CosmoOnOpenStackDriver(object):
                         not_found_resources.append(resource_data)
                     del(resources[resource_name])
 
-        #deleting in reversed order to creation order
+        # deleting in reversed order to creation order
         del_resource('floating_ip', self.floating_ip_controller)
         del_resource('management_server', self.server_controller)
         del_resource('agents_keypair', self.keypair_controller)
@@ -583,7 +591,7 @@ class CosmoOnOpenStackDriver(object):
         del_resource('management_security_group', self.sg_controller)
         del_resource('agents_security_group', self.sg_controller)
         del_resource('router', self.router_controller)
-        #Skipping ext_network - currently not automatically created/deleted.
+        # Skipping ext_network - currently not automatically created/deleted.
         del_resource('subnet', self.subnet_controller)
         del_resource('int_network', self.network_controller)
 
@@ -654,7 +662,8 @@ class CosmoOnOpenStackDriver(object):
             keypair_config['auto_generated']['private_key_target_path']
         return expanduser(path)
 
-    def _run_with_retries(self, command, retries=3, sleeper=3):
+    def _run_with_retries(self, command, retries=FABRIC_RETRIES,
+                          sleeper=FABRIC_SLEEPTIME):
 
         for execution in range(retries):
             lgr.debug('running command: {0}'
@@ -667,23 +676,24 @@ class CosmoOnOpenStackDriver(object):
             if r.succeeded:
                 lgr.debug('successfully ran command: {0}'
                           .format(command))
-                return
+                return True
             else:
                 lgr.warning('retrying command: {0}'
                             .format(command))
                 time.sleep(sleeper)
         lgr.error('failed to run: {0}, {1}'
-                  .format(command), r.stdout)
-        return
+                  .format(command, r.stderr))
+        return False
 
     def _download_package(self, url, path):
-        self._run_with_retries('sudo wget %s -P %s' % (path, url))
+        return self._run_with_retries('sudo wget -T 30 {0} -P {1}'
+                                      .format(path, url))
 
     def _unpack(self, path):
-        self._run_with_retries('sudo dpkg -i %s/*.deb' % path)
+        return self._run_with_retries('sudo dpkg -i {0}/*.deb'.format(path))
 
     def _run(self, command):
-        self._run_with_retries(command)
+        return self._run_with_retries(command)
 
     def _bootstrap_manager(self,
                            mgmt_ip,
@@ -694,7 +704,7 @@ class CosmoOnOpenStackDriver(object):
                  .format(mgmt_ip))
         compute_config = self.config['compute']
         cosmo_config = self.config['cloudify']
-        management_server_config = compute_config['management_server']
+        mgmt_server_config = compute_config['management_server']
         mgr_kpconf = compute_config['management_server']['management_keypair']
 
         lgr.debug('creating ssh channel to machine...')
@@ -702,8 +712,8 @@ class CosmoOnOpenStackDriver(object):
             ssh = self._create_ssh_channel_with_mgmt(
                 mgmt_ip,
                 self._get_private_key_path_from_keypair_config(
-                    management_server_config['management_keypair']),
-                management_server_config['user_on_management'])
+                    mgmt_server_config['management_keypair']),
+                mgmt_server_config['user_on_management'])
         except:
             lgr.info('ssh channel creation failed. '
                      'your private and public keys might not be matching or '
@@ -711,8 +721,8 @@ class CosmoOnOpenStackDriver(object):
                      'connections to port {0}.'.format(SSH_CONNECT_PORT))
             return False
 
-        env.user = management_server_config['user_on_management']
-        env.warn_only = 0
+        env.user = mgmt_server_config['user_on_management']
+        env.warn_only = True
         env.abort_on_prompts = False
         env.connection_attempts = 5
         env.keepalive = 0
@@ -723,14 +733,13 @@ class CosmoOnOpenStackDriver(object):
         env.forward_agent = True
         env.status = False
         env.key_filename = [mgr_kpconf['auto_generated']
-                           ['private_key_target_path']]
+                            ['private_key_target_path']]
 
         if not bootstrap_using_script:
-
             try:
                 self._copy_files_to_manager(
                     ssh,
-                    management_server_config['userhome_on_management'],
+                    mgmt_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
                         compute_config['agent_servers']['agents_keypair']),
@@ -744,45 +753,71 @@ class CosmoOnOpenStackDriver(object):
                                                      'aborts',
                                                      'warnings'):
 
-                try:
-                    lgr.info('downloading cloudify components package...')
-                    self._download_package(
-                        CLOUDIFY_PACKAGES_PATH,
-                        cosmo_config['cloudify_components_package_url'])
-
-                    lgr.info('downloading cloudify package...')
-                    self._download_package(
-                        CLOUDIFY_PACKAGES_PATH,
-                        cosmo_config['cloudify_package_url'])
-                except:
-                    lgr.error('failed to download cloudify packages. '
-                              'please ensure packages exist in their '
-                              'configured locations in the config file')
+                lgr.info('downloading cloudify components package...')
+                r = self._download_package(
+                    CLOUDIFY_PACKAGES_PATH,
+                    cosmo_config['cloudify_components_package_url'])
+                if not r:
+                    lgr.error('failed to download components package. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
                     return False
 
-                try:
-                    lgr.info('unpacking cloudify packages...')
-                    self._unpack(
-                        CLOUDIFY_PACKAGES_PATH)
-                except:
+                lgr.info('downloading cloudify package...')
+                r = self._download_package(
+                    CLOUDIFY_PACKAGES_PATH,
+                    cosmo_config['cloudify_package_url'])
+                if not r:
+                    lgr.error('failed to download cloudify package. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
+                    return False
+
+                lgr.info('downloading cloudify ubuntu agent...')
+                r = self._download_package(
+                    AGENT_PACKAGES_PATH,
+                    cosmo_config['cloudify_ubuntu_agent_url'])
+                if not r:
+                    lgr.error('failed to download cloudify ubuntu agent. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
+                    return False
+
+                lgr.info('unpacking cloudify packages...')
+                r = self._unpack(
+                    CLOUDIFY_PACKAGES_PATH)
+                if not r:
                     lgr.error('failed to unpack cloudify packages')
                     return False
 
-                try:
-                    lgr.debug('verifying verbosity for installation process')
-                    v = self.verbose_output
-                    self.verbose_output = True
+                lgr.debug('verifying verbosity for installation process')
+                v = self.verbose_output
+                self.verbose_output = True
 
-                    lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
-                    self._run('sudo {0}/cloudify3-components-bootstrap.sh'
-                        .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
-
-                    self._run('sudo {0}/cloudify3-bootstrap.sh'
-                        .format(CLOUDIFY_PACKAGE_PATH))
-                except:
-                    lgr.error('failed to install manager')
+                lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
+                r = self._run('sudo {0}/cloudify3-components-bootstrap.sh'
+                              .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
+                if not r:
+                    lgr.error('failed to install components')
                     return False
 
+                celery_user = mgmt_server_config['user_on_management']
+                r = self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
+                              .format(CLOUDIFY_PACKAGE_PATH,
+                                      celery_user, private_ip))
+                if not r:
+                    lgr.error('failed to install cloudify')
+                    return False
+
+                self.verbose_output = False
+                lgr.info('unpacking cloudify agent...')
+                r = self._unpack(
+                    AGENT_PACKAGES_PATH)
+                if not r:
+                    lgr.error('failed to unpack cloudify agent')
+                    return False
+
+                self.verbose_output = True
                 if dev_mode:
                     lgr.info('\n\n\n\n\nentering dev-mode. '
                              'dev configuration will be applied...\n'
@@ -809,12 +844,17 @@ class CosmoOnOpenStackDriver(object):
                                           '/tmp/module.tar.gz'
                                           .format(download))
                                 self._run('sudo tar -C /tmp -xvf {0}'
-                                    .format('/tmp/module.tar.gz'))
+                                          .format('/tmp/module.tar.gz'))
 
                         if 'installs' in value:
                             src_wfs = False
+                            src_orc = False
                             try:
                                 src_wfs = value['installs']['workflow_service']
+                            except:
+                                pass
+                            try:
+                                src_orc = value['installs']['orchestrator']
                             except:
                                 pass
                             if src_wfs:
@@ -825,6 +865,17 @@ class CosmoOnOpenStackDriver(object):
                                 lgr.debug('workflow service config..')
                                 self._run('sudo cp -R {0} {1}'
                                           .format(src_wfs, dst_wfs))
+                            elif src_orc:
+                                lgr.debug('installing orchestrator')
+                                dst_orc = ('{0}/resources/'.format(virtualenv))
+                                lgr.debug('orchestrator config..')
+                                self._run('sudo cp -R {0} {1}'
+                                          .format('{0}/cloudify/'.format(src_orc),  # NOQA
+                                                  dst_orc))
+                                self._run('sudo cp -R {0} {1}'
+                                          .format('{0}/org/cloudifysource/cosmo/dsl/alias-mappings.yaml'  # NOQA
+                                                  .format(src_orc),  # NOQA
+                                                  '{0}/cloudify/'.format(dst_orc)))  # NOQA
                             else:
                                 for install in value['installs']:
                                     lgr.debug('installing: ' + install)
@@ -845,7 +896,7 @@ class CosmoOnOpenStackDriver(object):
             try:
                 self._copy_files_to_manager(
                     ssh,
-                    management_server_config['userhome_on_management'],
+                    mgmt_server_config['userhome_on_management'],
                     self.config['keystone'],
                     self._get_private_key_path_from_keypair_config(
                         compute_config['agent_servers']['agents_keypair']),
@@ -884,22 +935,22 @@ class CosmoOnOpenStackDriver(object):
                 # configure and clone cosmo-manager from github
                 branch = cosmo_config['cloudify_branch']
                 workingdir = '{0}/cosmo-work'.format(
-                    management_server_config['userhome_on_management'])
+                    mgmt_server_config['userhome_on_management'])
                 version = cosmo_config['cloudify_branch']
                 configdir = '{0}/cosmo-manager/vagrant'.format(workingdir)
 
                 lgr.debug('cloning cosmo on manager')
                 self._exec_command_on_manager(ssh, 'mkdir -p {0}'
-                    .format(workingdir))
+                                              .format(workingdir))
                 self._exec_command_on_manager(ssh,
                                               'git clone https://github.com/'
                                               'CloudifySource/cosmo-manager'
                                               '.git {0}/cosmo-manager'
                                               ' --depth 1'
-                    .format(workingdir))
+                                              .format(workingdir))
                 self._exec_command_on_manager(ssh, '( cd {0}/cosmo-manager ; '
                                                    'git checkout {1} )'
-                    .format(workingdir, branch))
+                                                   .format(workingdir, branch))
 
                 lgr.debug('running the manager bootstrap script '
                           'remotely')
@@ -932,8 +983,8 @@ class CosmoOnOpenStackDriver(object):
         # TODO: support fingerprint in config json
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        #trying to ssh connect to management server. Using retries since it
-        #might take some time to find routes to host
+        # trying to ssh connect to management server. Using retries since it
+        # might take some time to find routes to host
         for retry in range(0, SSH_CONNECT_RETRIES):
             try:
                 ssh.connect(mgmt_ip, username=user_on_management,
@@ -1069,12 +1120,12 @@ class BaseController(object):
             try:
                 self.delete(resource_id)
             except Exception as e:
-                #Checking if resource doesn't exist
+                # Checking if resource doesn't exist
                 if self._is_openstack_404_error(e):
                     lgr.debug("resource {0} wasn't found".format(resource_id))
                     return False
 
-                #Different error occurred. Retry or give up.
+                # Different error occurred. Retry or give up.
                 lgr.debug("Error while attempting to delete resource with "
                           "id {0} of type {1} [retry {2} of {3}]: {4}".format(
                               resource_id, res_type, retry, retries, str(e)))
@@ -1222,8 +1273,8 @@ class OpenStackNetworkController(BaseControllerNeutron):
         return self.neutron_client.show_network(id)
 
     def check_for_delete_conflicts(self, network_id, **kwargs):
-        #checking for collisions with unknown subnets
-        #Notes:
+        # checking for collisions with unknown subnets
+        # Notes:
         # 1) No check for unknown servers on the known subnets is made,
         # as it is expected for those subnets to be go through deletion
         # before the network does. Same goes for routers and router ports
@@ -1271,7 +1322,7 @@ class OpenStackSubnetController(BaseControllerNeutron):
         return self.neutron_client.show_subnet(id)
 
     def check_for_delete_conflicts(self, subnet_id, **kwargs):
-        #checking for collisions with unknown servers and routers
+        # checking for collisions with unknown servers and routers
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
         routers_for_deletion = kwargs.get('routers_for_deletion', {})
 
@@ -1279,7 +1330,7 @@ class OpenStackSubnetController(BaseControllerNeutron):
         server_conflicts = []
         ports = self.neutron_client.list_ports()['ports']
         for port in ports:
-            #for each port, check if it has an ip on the given subnet,
+            # for each port, check if it has an ip on the given subnet,
             # if it belongs to a server or a router (and not, for example,
             # a DHCP port), and if that device is up for deletion or not
             if 'device_owner' in port and \
@@ -1289,7 +1340,7 @@ class OpenStackSubnetController(BaseControllerNeutron):
                  (port['device_owner'].startswith('compute') and
                   port['device_id'] not in servers_for_deletion)):
                 for fixed_ip in port['fixed_ips']:
-                    #should be only one, but iterating over it anyway.
+                    # should be only one, but iterating over it anyway.
                     if 'subnet_id' in fixed_ip and fixed_ip['subnet_id'] == \
                             subnet_id:
                         if port['device_owner'] == 'network:router_interface':
@@ -1359,9 +1410,9 @@ class OpenStackRouterController(BaseControllerNeutron):
         return self.neutron_client.show_router(id)
 
     def check_for_delete_conflicts(self, router_id, **kwargs):
-        #checking for collisions with unknown networks and unknown
+        # checking for collisions with unknown networks and unknown
         # floating_ips.
-        #Note: No check for unknown servers/subnets on the known networks is
+        # Note: No check for unknown servers/subnets on the known networks is
         # made, as it is expected for those networks to be go through
         # deletion before the router does.
         networks_for_deletion = kwargs.get('networks_for_deletion', {})
@@ -1385,7 +1436,7 @@ class OpenStackRouterController(BaseControllerNeutron):
         for port in self.neutron_client.list_ports(
                 device_id=router_id)['ports']:
             for interface in port['fixed_ips']:
-                #should be only one, but iterating over it anyway.
+                # should be only one, but iterating over it anyway.
                 self.neutron_client.remove_interface_router(router_id,
                                                             interface)
         self.neutron_client.delete_router(router_id)
@@ -1415,7 +1466,7 @@ class OpenStackNovaSecurityGroupController(BaseControllerNova):
         return self.nova_client.security_groups.get(id)
 
     def check_for_delete_conflicts(self, sg_id, **kwargs):
-        #checking for collisions with unknown servers
+        # checking for collisions with unknown servers
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
         servers = self.nova_client.servers.list()
         server_conflicts = []
@@ -1467,7 +1518,7 @@ class OpenStackNeutronSecurityGroupController(BaseControllerNovaAndNeutron):
         return self.neutron_client.show_security_group(id)
 
     def check_for_delete_conflicts(self, sg_id, **kwargs):
-        #checking for collisions with unknown servers
+        # checking for collisions with unknown servers
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
         servers = self.nova_client.servers.list()
         server_conflicts = []
@@ -1514,7 +1565,7 @@ class OpenStackKeypairController(BaseControllerNova):
         return self.nova_client.keypairs.get(id)
 
     def check_for_delete_conflicts(self, keypair_id, **kwargs):
-        #Note: While it might be somewhat weird to delete a keypair which is
+        # Note: While it might be somewhat weird to delete a keypair which is
         # currently in use by a server, Openstack does allow this and thus
         # so do we.
         return {}
