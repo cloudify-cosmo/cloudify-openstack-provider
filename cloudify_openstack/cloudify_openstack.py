@@ -312,17 +312,13 @@ class CosmoOnOpenStackDriver(object):
             return mgmt_ip, self.provider_context
         else:
             if keep_up:
-                lgr.info('manager server will remain up')
+                lgr.info('topology will remain up')
                 sys.exit(1)
             else:
-                if keep_up:
-                    lgr.info('manager server will remain up')
-                    sys.exit(1)
-                else:
-                    lgr.info('tearing down topology'
-                             ' due to bootstrap failure')
-                    self.delete_topology()
-                    sys.exit(1)
+                lgr.info('tearing down topology'
+                         ' due to bootstrap failure')
+                self.delete_topology()
+                sys.exit(1)
 
     def create_topology(self):
         resources = {}
