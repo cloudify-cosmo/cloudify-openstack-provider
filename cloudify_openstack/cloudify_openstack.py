@@ -31,7 +31,11 @@ from os.path import expanduser
 from scp import SCPClient
 import logging
 import logging.config
-from cosmo_cli.cosmo_cli import logger, _set_global_verbosity_level
+from schemas import PROVIDER_SCHEMA
+
+from cosmo_cli.cosmo_cli import logger
+from cosmo_cli.cosmo_cli import _set_global_verbosity_level
+from cosmo_cli.cosmo_cli import BaseProviderClass
 
 # Validator
 from IPy import IP
@@ -63,105 +67,101 @@ logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(
 lgr, flgr = logger()
 
 
-def provision(provider_config, is_verbose_output=False,
-              keep_up=False):
-    """
-    provisions resources in the provider before bootstrapping
-    the management server. This can include (for instance)
-    network, keypairs, security groups and an instance.
-    at the very least, an instance is required.
-    This should return
-    a hash containing the instance's attached ip, its private ip,
-    its ssh key path and its ssh user.
-    (upon error, this should return None)
-    """
-    _set_global_verbosity_level(is_verbose_output)
-    # implement the resource provisioning process.
-    connector = OpenStackConnector(provider_config)
-    network_creator = OpenStackNetworkCreator(connector)
-    subnet_creator = OpenStackSubnetCreator(connector)
-    router_creator = OpenStackRouterCreator(connector)
-    floating_ip_creator = OpenStackFloatingIpCreator(connector)
-    keypair_creator = OpenStackKeypairCreator(connector)
-    server_creator = OpenStackServerCreator(connector)
-    server_killer = OpenStackServerKiller(connector)
-    if provider_config['networking']['neutron_supported_region']:
-        sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
-    else:
-        sg_creator = OpenStackNovaSecurityGroupCreator(connector)
-    provisioner = CosmoOnOpenStackProvisioner(
-        provider_config, network_creator, subnet_creator, router_creator,
-        sg_creator, floating_ip_creator, keypair_creator, server_creator,
-        server_killer)
-    mgmt_ip, private_ip, ssh_key, ssh_user = provisioner._create_topology()
-    if mgmt_ip is not None:
-        r = provisioner._copy_files(mgmt_ip)
-        if r is not None:
-            return mgmt_ip, private_ip, ssh_key, ssh_user
+class ProviderManager(BaseProviderClass):
 
+    def __init__(self, provider_config, is_verbose_output=False):
+        self.provider_config = provider_config
+        self.is_verbose_output = is_verbose_output
 
-def validate(provider_config, schema=None, is_verbose_output=False):
-    """
-    validates provider specific resources and configuration.
-    This can, for instance, include quota validations, config file
-    validations, access validations, etc...
-    This should either return True if the validations were successful,
-    or False, if they weren't.
-    """
-    _set_global_verbosity_level(is_verbose_output)
+    def provision(self, keep_up=False):
+        """
+        provisions resources in the provider before bootstrapping
+        the management server. This can include (for instance)
+        network, keypairs, security groups and an instance.
+        at the very least, an instance is required.
+        This should return
+        a hash containing the instance's attached ip, its private ip,
+        its ssh key path and its ssh user.
+        (upon error, this should return None)
+        """
+        _set_global_verbosity_level(self.is_verbose_output)
+        # implement the resource provisioning process.
+        connector = OpenStackConnector(self.provider_config)
+        network_creator = OpenStackNetworkCreator(connector)
+        subnet_creator = OpenStackSubnetCreator(connector)
+        router_creator = OpenStackRouterCreator(connector)
+        floating_ip_creator = OpenStackFloatingIpCreator(connector)
+        keypair_creator = OpenStackKeypairCreator(connector)
+        server_creator = OpenStackServerCreator(connector)
+        server_killer = OpenStackServerKiller(connector)
+        if self.provider_config['networking']['neutron_supported_region']:
+            sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
+        else:
+            sg_creator = OpenStackNovaSecurityGroupCreator(connector)
+        provisioner = CosmoOnOpenStackProvisioner(
+            self.provider_config, network_creator, subnet_creator,
+            router_creator, sg_creator, floating_ip_creator, keypair_creator,
+            server_creator, server_killer)
+        params = provisioner._create_topology()
+        if params is not None:
+            mgmt_ip, private_ip, ssh_key, ssh_user = params
+            if mgmt_ip is not None:
+                r = provisioner._copy_files(mgmt_ip)
+            if r is not None:
+                return params
+        return None
 
-    global validated
-    validated = True
-    verifier = OpenStackValidator()
+    def validate(self):
+        """
+        validates provider specific resources and configuration.
+        This can, for instance, include quota validations, config file
+        validations, access validations, etc...
+        This should either retriesurn True if the validations were successful,
+        or False, if they weren't.
+        """
+        _set_global_verbosity_level(self.is_verbose_output)
 
-    lgr.debug('validating provider cidrs in config file...')
-    verifier._validate_cidr('networking.subnet.cidr',
-                            provider_config['networking']
-                            ['subnet']['cidr'])
-    verifier._validate_cidr('networking.management_security_group.cidr',
-                            provider_config['networking']
-                            ['management_security_group']['cidr'])
+        global validated
+        validated = True
+        verifier = OpenStackValidator()
 
-    if validated:
+        self._validate_config_schema(PROVIDER_SCHEMA)
+        lgr.debug('validating provider cidrs in config file...')
+        verifier._validate_cidr('networking.subnet.cidr',
+                                self.provider_config['networking']
+                                ['subnet']['cidr'])
+        verifier._validate_cidr('networking.management_security_group.cidr',
+                                self.provider_config['networking']
+                                ['management_security_group']['cidr'])
+
+        if validated:
+            return True
+        else:
+            return False
+
+    def teardown(self, management_ip):
+        """
+        tears down whatever was provisioned in provision().
+        must return True on successful teardown, and False otherwise.
+        """
+        _set_global_verbosity_level(self.is_verbose_output)
+        lgr.info('NOTE: currently only instance teardown is implemented!')
+
+        connector = OpenStackConnector(self.provider_config)
+        # network_killer = OpenStackNetworkKiller(connector)
+        # subnet_killer = OpenStackSubnetKiller(connector)
+        # router_killer = OpenStackRouterKiller(connector)
+        # floating_ip_killer = OpenStackFloatingIpKiller(connector)
+        # keypair_killer = OpenStackKeypairKiller(connector)
+        server_killer = OpenStackServerKiller(connector)
+        # if provider_config['networking']['neutron_supported_region']:
+        #     sg_killer = OpenStackNeutronSecurityGroupKiller(connector)
+        # else:
+        #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
+        killer = CosmoOnOpenStackKiller(
+            self.provider_config, management_ip, server_killer)
+        killer._kill_topology()
         return True
-    else:
-        return False
-
-
-def teardown(provider_config, management_ip, is_verbose_output=False):
-    """
-    tears down whatever was provisioned in provision().
-    must return True on successful teardown, and False otherwise.
-    """
-    _set_global_verbosity_level(is_verbose_output)
-    lgr.info('NOTE: currently only instance teardown is implemented!')
-
-    connector = OpenStackConnector(provider_config)
-    # network_killer = OpenStackNetworkKiller(connector)
-    # subnet_killer = OpenStackSubnetKiller(connector)
-    # router_killer = OpenStackRouterKiller(connector)
-    # floating_ip_killer = OpenStackFloatingIpKiller(connector)
-    # keypair_killer = OpenStackKeypairKiller(connector)
-    server_killer = OpenStackServerKiller(connector)
-    # if provider_config['networking']['neutron_supported_region']:
-    #     sg_killer = OpenStackNeutronSecurityGroupKiller(connector)
-    # else:
-    #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
-    killer = CosmoOnOpenStackKiller(
-        provider_config, management_ip, server_killer)
-    killer._kill_topology()
-    return True
-
-
-def _mkdir_p(path):
-    try:
-        lgr.debug('creating dir {0}'
-                  .format(path))
-        os.makedirs(path)
-    except OSError, exc:
-        if exc.errno == errno.EEXIST and os.path.isdir(path):
-            return
-        raise
 
 
 class OpenStackValidator:
@@ -254,7 +254,6 @@ class CosmoOnOpenStackProvisioner(object):
                 return None
 
             insconf['nics'] = [{'net-id': net_id}]
-
         # Security group for Cosmo created instances
         asgconf = self.provider_config['networking']['agents_security_group']
         try:
@@ -350,7 +349,6 @@ class CosmoOnOpenStackProvisioner(object):
             lgr.error('failed to create mgmt server ({0})'.format(
                 exception))
             return None
-
         if is_neutron_supported_region:
             network_name = nconf['name']
             if not insconf[EP_FLAG]:  # new server
@@ -375,6 +373,7 @@ class CosmoOnOpenStackProvisioner(object):
             if 'auto_generated' in mgr_kpconf else None
         ssh_user = compute_config['management_server']['user_on_management']
 
+        # if ips is not None:
         return public_ip, private_ip, ssh_key, ssh_user
 
     def _copy_files(self, mgmt_ip):
@@ -389,6 +388,7 @@ class CosmoOnOpenStackProvisioner(object):
                 self._get_private_key_path_from_keypair_config(
                     management_server_config['management_keypair']),
                 management_server_config['user_on_management'])
+            return True
         except:
             lgr.error('ssh channel creation failed. '
                       'your private and public keys might not be matching or '
@@ -763,10 +763,20 @@ class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
         else:
             key = self.nova_client.keypairs.create(key_name)
             pk_target_path = expanduser(private_key_target_path)
-            _mkdir_p(os.path.dirname(private_key_target_path))
+            self._mkdir_p(os.path.dirname(private_key_target_path))
             with open(pk_target_path, 'w') as f:
                 f.write(key.private_key)
                 os.system('chmod 600 {0}'.format(pk_target_path))
+
+    def _mkdir_p(path):
+        try:
+            lgr.debug('creating dir {0}'
+                      .format(path))
+            os.makedirs(path)
+        except OSError, exc:
+            if exc.errno == errno.EEXIST and os.path.isdir(path):
+                return
+            raise
 
 
 class OpenStackServerCreator(CreateOrEnsureExistsNova):
