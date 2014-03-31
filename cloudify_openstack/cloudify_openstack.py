@@ -466,10 +466,11 @@ class CosmoOnOpenStackDriver(object):
 
         def check_for_conflicts(resource_name, controller, **kwargs):
             resource_data = resources[resource_name]
+            conflicts = {}
             if resource_data['created']:
                 conflicts = controller.check_for_delete_conflicts(
                     resource_data['id'], **kwargs)
-                all_conflicts[resource_name] = conflicts
+            all_conflicts[resource_name] = conflicts
 
         def get_known_resource_id(resource_name):
             return resources[resource_name]['id']
