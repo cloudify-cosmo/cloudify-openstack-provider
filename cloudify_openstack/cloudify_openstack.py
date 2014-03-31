@@ -1365,7 +1365,7 @@ class OpenStackRouterController(BaseControllerNeutron):
         # deletion before the router does.
         networks_for_deletion = kwargs.get('networks_for_deletion', {})
         network_conflicts = [port['id'] for port in self.neutron_client
-                            .list_ports(device_id=router_id)['ports'] if
+                             .list_ports(device_id=router_id)['ports'] if
                              port['network_id'] not in networks_for_deletion]
 
         floating_ips_for_deletion = kwargs.get('floating_ips_for_deletion', {})
