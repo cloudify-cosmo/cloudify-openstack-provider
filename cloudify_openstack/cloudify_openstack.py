@@ -128,7 +128,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
     return mgmt_ip, provider_context
 
 
-def teardown(config_path, provider_context, ignore_conflicts,
+def teardown(provider_context, ignore_conflicts=False, config_path=None,
              is_verbose_output=False):
     driver = _get_driver(config_path, provider_context, is_verbose_output)
     driver.delete_topology(ignore_conflicts)
@@ -294,6 +294,7 @@ class CosmoOnOpenStackDriver(object):
 
         installed = None
         mgmt_ip, private_ip = self.create_topology()
+
         if mgmt_ip is not None:
             installed = self._bootstrap_manager(mgmt_ip,
                                                 private_ip,
@@ -516,24 +517,22 @@ class CosmoOnOpenStackDriver(object):
 
         def format_conflict_print(conflicted_resource_name,
                                   conflicts):
-            conflict_lines = []
-            for conflict_type, conflict_ids_list in conflicts.iteritems():
-                conflict_lines.extend(['{0} {1}'.format(conflict_type,
-                                                        conflict_id) for
-                                       conflict_id in conflict_ids_list])
-            return '\t{0} {1}:\n'\
-                   '\t\t{2}'.format(
-                       resources[conflicted_resource_name]['id'],
+            return '\t{0} - {1} - {2}:\n'\
+                   '\t\t{3}'.format(
+                       resources[conflicted_resource_name]['name'] if 'name'
+                       in resources[conflicted_resource_name] else
+                       resources[conflicted_resource_name]['ip'],
                        resources[conflicted_resource_name]['type'],
-                       '\t\t'.join(['{0}\n'.format(conflict_line) for
-                                    conflict_line in conflict_lines]))
+                       resources[conflicted_resource_name]['id'],
+                       '\t\t'.join(['{0} - {1}\n'.format(conflict_type,
+                                                         conflict_id) for
+                                    conflict_type, conflict_id in conflicts]))
 
         formatted_conflict_lines_str = ''.join(
             [format_conflict_print(conflicted_resource_name, conflicts)
              for conflicted_resource_name, conflicts in all_conflicts
-                .iteritems() if any(
-                    all_conflicts[conflicted_resource_name][k] for k
-                    in all_conflicts[conflicted_resource_name].keys())])
+                .iteritems() if
+                len(all_conflicts[conflicted_resource_name]) > 0])
         if len(formatted_conflict_lines_str) > 0:
             lgr.info('Conflicts detected:\n'
                      '{0}'.format(formatted_conflict_lines_str))
@@ -544,26 +543,26 @@ class CosmoOnOpenStackDriver(object):
                                                 all_conflicts):
         if len(all_conflicts['management_server']) > 0:
             known_server_id = resources['management_server']['id']
-            all_conflicts['management_security_group']['servers'].append(
-                known_server_id)
-            all_conflicts['agents_security_group']['servers'].append(
-                known_server_id)
-            all_conflicts['subnet']['servers'].append(known_server_id)
+            all_conflicts['management_security_group'].append(
+                ('server', known_server_id))
+            all_conflicts['agents_security_group'].append(
+                ('server', known_server_id))
+            all_conflicts['subnet'].append(('server', known_server_id))
 
         if len(all_conflicts['floating_ip']) > 0:
-            all_conflicts['router']['floating_ips'].append(
-                resources['floating_ip']['id'])
+            all_conflicts['router'].append(
+                ('floating_ip', resources['floating_ip']['id']))
 
         if len(all_conflicts['int_network']) > 0 or \
            len(all_conflicts['subnet']) > 0 or \
            len(all_conflicts['router']) > 0:
             # those three go down or stay up together
-            all_conflicts['router']['networks'].append(
-                resources['int_network']['id'])
-            all_conflicts['subnet']['routers'].append(
-                resources['router']['id'])
-            all_conflicts['int_network']['subnets'].append(
-                resources['subnet']['id'])
+            all_conflicts['router'].append(
+                ('network', resources['int_network']['id']))
+            all_conflicts['subnet'].append(
+                ('router', resources['router']['id']))
+            all_conflicts['int_network'].append(
+                ('subnet', resources['subnet']['id']))
 
     def _delete_resources(self, resources):
         deleted_resources = []
@@ -610,9 +609,10 @@ class CosmoOnOpenStackDriver(object):
             self._delete_resources(resources)
 
         def format_resources_data_for_print(resources_data):
-            return '\t'.join(['{0} {1}\n'.format(
-                resource_data['id'], resource_data['type']) for
-                resource_data in resources_data])
+            return '\t'.join(['{0} - {1} - {2}\n'.format(
+                resource_data['name'] if 'name' in resource_data else
+                resource_data['ip'], resource_data['type'], resource_data[
+                    'id']) for resource_data in resources_data])
 
         deleted_resources_print = \
             'Successfully deleted the following resources:\n\t{0}\n' \
@@ -1114,8 +1114,8 @@ class BaseController(object):
         # False if resource didn't exist,
         # None if failed to delete existing resource
         res_type = self.__class__.WHAT
-        lgr.debug("Attempting to delete resource with id {0} of type {1}"
-                  .format(resource_id, res_type))
+        lgr.debug("Attempting to delete resource {0} - {1}"
+                  .format(res_type, resource_id))
         for retry in range(retries):
             try:
                 self.delete(resource_id)
@@ -1126,9 +1126,9 @@ class BaseController(object):
                     return False
 
                 # Different error occurred. Retry or give up.
-                lgr.debug("Error while attempting to delete resource with "
-                          "id {0} of type {1} [retry {2} of {3}]: {4}".format(
-                              resource_id, res_type, retry, retries, str(e)))
+                lgr.debug("Error while attempting to delete resource "
+                          "{0} - {1} [retry {2} of {3}]: {4}".format(
+                              res_type, resource_id, retry, retries, str(e)))
                 time.sleep(sleep)
                 continue
 
@@ -1137,13 +1137,13 @@ class BaseController(object):
                 lgr.debug('resource {0} terminated'.format(resource_id))
                 return True
             except Exception as e:
-                lgr.debug('Error while waiting for resource {0} of type {1}  '
-                          'to terminate: {2}'.format(resource_id,
-                                                     res_type,
+                lgr.debug('Error while waiting for resource {0} - {1} '
+                          'to terminate: {2}'.format(res_type,
+                                                     resource_id,
                                                      str(e)))
                 return None
-        lgr.debug('Failed all retries to delete resource {0} of type {1}'
-                  .format(resource_id, res_type))
+        lgr.debug('Failed all retries to delete resource {0} - {1}'
+                  .format(res_type, resource_id))
         return None
 
     def _wait_for_resource_to_be_deleted(self, resource_id):
@@ -1290,11 +1290,10 @@ class OpenStackNetworkController(BaseControllerNeutron):
         #  check for subnet conflicts.
 
         subnets_for_deletion = kwargs.get('subnets_for_deletion', {})
-        subnet_conflicts = [subnet for subnet in self.get_by_id(network_id)[
-            'network']['subnets'] if subnet not in subnets_for_deletion]
-        return {
-            'subnets': subnet_conflicts
-        }
+        subnet_conflicts = [('subnet', subnet) for subnet in self.get_by_id(
+            network_id)['network']['subnets'] if subnet
+            not in subnets_for_deletion]
+        return subnet_conflicts
 
     def delete(self, network_id):
         self.neutron_client.delete_network(network_id)
@@ -1344,13 +1343,12 @@ class OpenStackSubnetController(BaseControllerNeutron):
                     if 'subnet_id' in fixed_ip and fixed_ip['subnet_id'] == \
                             subnet_id:
                         if port['device_owner'] == 'network:router_interface':
-                            router_conflicts.append(port['device_id'])
+                            router_conflicts.append(('router',
+                                                     port['device_id']))
                         else:
-                            server_conflicts.append(port['device_id'])
-        return {
-            'servers': server_conflicts,
-            'routers': router_conflicts
-        }
+                            server_conflicts.append(('server',
+                                                    port['device_id']))
+        return server_conflicts + router_conflicts
 
     def delete(self, subnet_id):
         self.neutron_client.delete_subnet(subnet_id)
@@ -1379,7 +1377,7 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
         return self.neutron_client.show_floatingip(id)
 
     def check_for_delete_conflicts(self, floating_ip_id, **kwargs):
-        return {}
+        return []
 
     def delete(self, floating_ip_id):
         self.neutron_client.delete_floatingip(floating_ip_id)
@@ -1416,21 +1414,20 @@ class OpenStackRouterController(BaseControllerNeutron):
         # made, as it is expected for those networks to be go through
         # deletion before the router does.
         networks_for_deletion = kwargs.get('networks_for_deletion', {})
-        network_conflicts = [port['id'] for port in self.neutron_client
-                             .list_ports(device_id=router_id)['ports'] if
-                             port['network_id'] not in networks_for_deletion]
+        network_conflicts = \
+            [('network', port['network_id']) for port in self
+                .neutron_client.list_ports(device_id=router_id)['ports'] if
+                port['network_id'] not in networks_for_deletion]
 
         floating_ips_for_deletion = kwargs.get('floating_ips_for_deletion', {})
-        floating_ips_conflicts = [floating_ip['id'] for floating_ip in
+        floating_ips_conflicts = [('floating_ip', floating_ip['id']) for
+                                  floating_ip in
                                   self.neutron_client.list_floatingips()[
                                       'floatingips'] if floating_ip[
                                       'router_id'] == router_id and
                                   floating_ip['id'] not in
                                   floating_ips_for_deletion]
-        return {
-            'networks': network_conflicts,
-            'floating_ips': floating_ips_conflicts
-        }
+        return network_conflicts + floating_ips_conflicts
 
     def delete(self, router_id):
         for port in self.neutron_client.list_ports(
@@ -1474,10 +1471,8 @@ class OpenStackNovaSecurityGroupController(BaseControllerNova):
             if server.id not in servers_for_deletion:
                 for sg in server.security_groups:
                     if sg['id'] == sg_id:
-                        server_conflicts.append(server.id)
-        return {
-            'servers': server_conflicts
-        }
+                        server_conflicts.append(('server', server.id))
+        return server_conflicts
 
     def delete(self, sg_id):
         self.nova_client.security_groups.delete(sg_id)
@@ -1526,10 +1521,8 @@ class OpenStackNeutronSecurityGroupController(BaseControllerNovaAndNeutron):
             if server.id not in servers_for_deletion:
                 for sg in server.list_security_group():
                     if sg.id == sg_id:
-                        server_conflicts.append(server.id)
-        return {
-            'servers': server_conflicts
-        }
+                        server_conflicts.append(('server', server.id))
+        return server_conflicts
 
     def delete(self, sg_id):
         self.neutron_client.delete_security_group(sg_id)
@@ -1568,7 +1561,7 @@ class OpenStackKeypairController(BaseControllerNova):
         # Note: While it might be somewhat weird to delete a keypair which is
         # currently in use by a server, Openstack does allow this and thus
         # so do we.
-        return {}
+        return []
 
     def delete(self, keypair_id):
         self.nova_client.keypairs.delete(keypair_id)
@@ -1686,7 +1679,7 @@ class OpenStackServerController(BaseControllerNova):
         return self.nova_client.servers.get(id)
 
     def check_for_delete_conflicts(self, server_id, **kwargs):
-        return {}
+        return []
 
     def delete(self, server_id):
         self.nova_client.servers.delete(server_id)
