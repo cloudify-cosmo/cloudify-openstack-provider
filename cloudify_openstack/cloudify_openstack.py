@@ -245,6 +245,13 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA):
         sys.exit(1)
 
 
+def _format_resource_name(res_type, res_id, res_name=None):
+    if res_name:
+        return "{0} - {1} - {2}".format(res_type, res_id, res_name)
+    else:
+        return "{0} - {1}".format(res_type, res_id)
+
+
 class OpenStackConfigFileValidator:
 
     def _validate_schema(self, provider_config, schema):
@@ -517,15 +524,17 @@ class CosmoOnOpenStackDriver(object):
 
         def format_conflict_print(conflicted_resource_name,
                                   conflicts):
-            return '\t{0} - {1} - {2}:\n'\
-                   '\t\t{3}'.format(
-                       resources[conflicted_resource_name]['name'] if 'name'
-                       in resources[conflicted_resource_name] else
-                       resources[conflicted_resource_name]['ip'],
-                       resources[conflicted_resource_name]['type'],
-                       resources[conflicted_resource_name]['id'],
-                       '\t\t'.join(['{0} - {1}\n'.format(conflict_type,
-                                                         conflict_id) for
+            return '\t{0}:\n'\
+                   '\t\t{1}'.format(
+                       _format_resource_name(
+                           resources[conflicted_resource_name]['name'] if
+                           'name' in resources[conflicted_resource_name] else
+                           resources[conflicted_resource_name]['ip'],
+                           resources[conflicted_resource_name]['type'],
+                           resources[conflicted_resource_name]['id']),
+                       '\t\t'.join(['{0}\n'.format(
+                           _format_resource_name(conflict_type,
+                                                 conflict_id)) for
                                     conflict_type, conflict_id in conflicts]))
 
         formatted_conflict_lines_str = ''.join(
@@ -609,10 +618,12 @@ class CosmoOnOpenStackDriver(object):
             self._delete_resources(resources)
 
         def format_resources_data_for_print(resources_data):
-            return '\t'.join(['{0} - {1} - {2}\n'.format(
-                resource_data['name'] if 'name' in resource_data else
-                resource_data['ip'], resource_data['type'], resource_data[
-                    'id']) for resource_data in resources_data])
+            return '\t'.join(['{0}\n'.format(
+                _format_resource_name(
+                    resource_data['name'] if 'name' in resource_data else
+                    resource_data['ip'],
+                    resource_data['type'],
+                    resource_data['id'])) for resource_data in resources_data])
 
         deleted_resources_print = \
             'Successfully deleted the following resources:\n\t{0}\n' \
@@ -1114,8 +1125,8 @@ class BaseController(object):
         # False if resource didn't exist,
         # None if failed to delete existing resource
         res_type = self.__class__.WHAT
-        lgr.debug("Attempting to delete resource {0} - {1}"
-                  .format(res_type, resource_id))
+        lgr.debug("Attempting to delete resource {0}"
+                  .format(_format_resource_name(res_type, resource_id)))
         for retry in range(retries):
             try:
                 self.delete(resource_id)
@@ -1127,8 +1138,9 @@ class BaseController(object):
 
                 # Different error occurred. Retry or give up.
                 lgr.debug("Error while attempting to delete resource "
-                          "{0} - {1} [retry {2} of {3}]: {4}".format(
-                              res_type, resource_id, retry, retries, str(e)))
+                          "{0} [retry {1} of {2}]: {3}".format(
+                              _format_resource_name(res_type, resource_id),
+                              retry, retries, str(e)))
                 time.sleep(sleep)
                 continue
 
@@ -1137,13 +1149,13 @@ class BaseController(object):
                 lgr.debug('resource {0} terminated'.format(resource_id))
                 return True
             except Exception as e:
-                lgr.debug('Error while waiting for resource {0} - {1} '
-                          'to terminate: {2}'.format(res_type,
-                                                     resource_id,
-                                                     str(e)))
+                lgr.debug('Error while waiting for resource {0} '
+                          'to terminate: {1}'.format(
+                              _format_resource_name(res_type, resource_id),
+                              str(e)))
                 return None
-        lgr.debug('Failed all retries to delete resource {0} - {1}'
-                  .format(res_type, resource_id))
+        lgr.debug('Failed all retries to delete resource {0}'
+                  .format(_format_resource_name(res_type, resource_id)))
         return None
 
     def _wait_for_resource_to_be_deleted(self, resource_id):
