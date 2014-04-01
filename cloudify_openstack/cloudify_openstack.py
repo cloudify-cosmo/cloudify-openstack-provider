@@ -603,7 +603,7 @@ class CosmoOnOpenStackDriver(object):
                 failed_to_delete_resources)
 
     def delete_topology(self, ignore_conflicts=False):
-        resources = self.provider_context['resources']
+        resources = self.provider_context['context']['resources']
 
         has_conflicts = self._check_and_handle_delete_conflicts(resources)
         if has_conflicts and not ignore_conflicts:
