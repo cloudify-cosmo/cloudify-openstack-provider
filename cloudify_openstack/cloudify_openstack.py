@@ -493,10 +493,13 @@ class CosmoOnOpenStackDriver(object):
         check_for_conflicts('management_keypair', self.keypair_controller)
 
         known_server_id = get_known_resource_id('management_server')
+        known_router_id = get_known_resource_id('router')
         check_for_conflicts('management_security_group', self.sg_controller,
-                            servers_for_deletion={known_server_id})
+                            servers_for_deletion={known_server_id},
+                            routers_for_deletion={known_router_id})
         check_for_conflicts('agents_security_group', self.sg_controller,
-                            servers_for_deletion={known_server_id})
+                            servers_for_deletion={known_server_id},
+                            routers_for_deletion={known_router_id})
 
         known_network_id = get_known_resource_id('int_network')
         known_floating_ip_id = get_known_resource_id('floating_ip')
@@ -507,7 +510,6 @@ class CosmoOnOpenStackDriver(object):
 
         # Skipping ext_network - currently not automatically created/deleted.
 
-        known_router_id = get_known_resource_id('router')
         check_for_conflicts('subnet', self.subnet_controller,
                             servers_for_deletion={known_server_id},
                             routers_for_deletion={known_router_id})
@@ -1252,13 +1254,6 @@ class BaseControllerNeutron(BaseController):
         self.neutron_client = connector.get_neutron_client()
 
 
-class BaseControllerNovaAndNeutron(BaseController):
-    def __init__(self, connector):
-        BaseController.__init__(self)
-        self.nova_client = connector.get_nova_client()
-        self.neutron_client = connector.get_neutron_client()
-
-
 class OpenStackNetworkController(BaseControllerNeutron):
     WHAT = 'network'
 
@@ -1486,7 +1481,7 @@ class OpenStackNovaSecurityGroupController(BaseControllerNova):
         self.nova_client.security_groups.delete(sg_id)
 
 
-class OpenStackNeutronSecurityGroupController(BaseControllerNovaAndNeutron):
+class OpenStackNeutronSecurityGroupController(BaseControllerNeutron):
     WHAT = 'neutron security group'
 
     def list_objects_with_name(self, name):
@@ -1523,14 +1518,19 @@ class OpenStackNeutronSecurityGroupController(BaseControllerNovaAndNeutron):
     def check_for_delete_conflicts(self, sg_id, **kwargs):
         # checking for collisions with unknown servers
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
-        servers = self.nova_client.servers.list()
+        routers_for_deletion = kwargs.get('routers_for_deletion', {})
+
         server_conflicts = []
-        for server in servers:
-            if server.id not in servers_for_deletion:
-                for sg in server.list_security_group():
-                    if sg.id == sg_id:
-                        server_conflicts.append(('server', server.id))
-        return server_conflicts
+        router_conflicts = []
+        for port in self.neutron_client.list_ports()['ports']:
+            if sg_id in port['security_groups']:
+                if port['device_owner'] == 'network:router_interface' and \
+                   port['device_id'] not in routers_for_deletion:
+                    router_conflicts.append(('router', port['device_id']))
+                elif port['device_owner'].startswith('compute') and \
+                        port['device_id'] not in servers_for_deletion:
+                    server_conflicts.append(('server', port['device_id']))
+        return server_conflicts + router_conflicts
 
     def delete(self, sg_id):
         self.neutron_client.delete_security_group(sg_id)
