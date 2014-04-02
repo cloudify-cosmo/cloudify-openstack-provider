@@ -498,10 +498,8 @@ class CosmoOnOpenStackDriver(object):
         check_for_conflicts('agents_security_group', self.sg_controller,
                             servers_for_deletion={known_server_id})
 
-        known_network_id = get_known_resource_id('int_network')
         known_floating_ip_id = get_known_resource_id('floating_ip')
         check_for_conflicts('router', self.router_controller,
-                            networks_for_deletion={known_network_id},
                             floating_ips_for_deletion=
                             {known_floating_ip_id})
 
@@ -546,6 +544,14 @@ class CosmoOnOpenStackDriver(object):
 
     def _propagate_conflicts_on_known_resources(self, resources,
                                                 all_conflicts):
+        # Propagate conflicts to make sure the conflicts output includes
+        # all resources which can't be taken down - in this case, due to
+        # their dependency on other resources which are known but have
+        # conflicts themselves.
+        # Note that the propagation here is parallel to the
+        # 'known_<resource>' usage when checking for conflicts, and the
+        # order of the propagation is the same as the order for checking
+        # conflicts.
         if resources['management_security_group']['created']:
             all_conflicts['management_security_group'].update(
                 all_conflicts['management_server'])
@@ -558,15 +564,11 @@ class CosmoOnOpenStackDriver(object):
 
         if resources['router']['created']:
             all_conflicts['router'].update(all_conflicts['floating_ip'])
-            all_conflicts['router'].update(all_conflicts['subnet'])
-            all_conflicts['router'].update(all_conflicts['int_network'])
 
         if resources['subnet']['created']:
             all_conflicts['subnet'].update(all_conflicts['router'])
-            all_conflicts['subnet'].update(all_conflicts['int_network'])
 
         if resources['int_network']['created']:
-            all_conflicts['int_network'].update(all_conflicts['router'])
             all_conflicts['int_network'].update(all_conflicts['subnet'])
 
     def _delete_resources(self, resources):
@@ -1409,17 +1411,7 @@ class OpenStackRouterController(BaseControllerNeutron):
         return self.neutron_client.show_router(id)
 
     def check_for_delete_conflicts(self, router_id, **kwargs):
-        # checking for collisions with unknown networks and unknown
-        # floating_ips.
-        # Note: No check for unknown servers/subnets on the known networks is
-        # made, as it is expected for those networks to be go through
-        # deletion before the router does.
-        networks_for_deletion = kwargs.get('networks_for_deletion', {})
-        network_conflicts = \
-            [('network', port['network_id']) for port in self
-                .neutron_client.list_ports(device_id=router_id)['ports'] if
-                port['network_id'] not in networks_for_deletion]
-
+        # checking for collisions with unknown floating_ips.
         floating_ips_for_deletion = kwargs.get('floating_ips_for_deletion', {})
         floating_ips_conflicts = [('floating_ip', floating_ip['id']) for
                                   floating_ip in
@@ -1428,7 +1420,7 @@ class OpenStackRouterController(BaseControllerNeutron):
                                       'router_id'] == router_id and
                                   floating_ip['id'] not in
                                   floating_ips_for_deletion]
-        return network_conflicts + floating_ips_conflicts
+        return floating_ips_conflicts
 
     def delete(self, router_id):
         for port in self.neutron_client.list_ports(
