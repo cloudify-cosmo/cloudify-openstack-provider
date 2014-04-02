@@ -128,10 +128,10 @@ def bootstrap(config_path=None, is_verbose_output=False,
     return mgmt_ip, provider_context
 
 
-def teardown(provider_context, ignore_conflicts=False, config_path=None,
+def teardown(provider_context, ignore_validation=False, config_path=None,
              is_verbose_output=False):
     driver = _get_driver(config_path, provider_context, is_verbose_output)
-    driver.delete_topology(ignore_conflicts)
+    driver.delete_topology(ignore_validation)
 
 
 def _get_driver(config_path, provider_context=None, is_verbose_output=False):
@@ -604,12 +604,13 @@ class CosmoOnOpenStackDriver(object):
         return (deleted_resources, not_found_resources,
                 failed_to_delete_resources)
 
-    def delete_topology(self, ignore_conflicts=False):
+    def delete_topology(self, ignore_validation=False):
         resources = self.provider_context['resources']
 
         has_conflicts = self._check_and_handle_delete_conflicts(resources)
-        if has_conflicts and not ignore_conflicts:
-            lgr.info('Not going forward with teardown due to conflicts.')
+        if has_conflicts and not ignore_validation:
+            lgr.info('Not going forward with teardown due to '
+                     'validation conflicts.')
             return
 
         deleted_resources, not_found_resources, failed_to_delete_resources =\
