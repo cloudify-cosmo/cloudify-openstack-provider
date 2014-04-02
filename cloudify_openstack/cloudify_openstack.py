@@ -482,7 +482,7 @@ class CosmoOnOpenStackDriver(object):
             if resource_data['created']:
                 conflicts = controller.check_for_delete_conflicts(
                     resource_data['id'], **kwargs)
-            all_conflicts[resource_name] = conflicts
+            all_conflicts[resource_name] = set(conflicts)
 
         def get_known_resource_id(resource_name):
             return resources[resource_name]['id']
@@ -493,13 +493,10 @@ class CosmoOnOpenStackDriver(object):
         check_for_conflicts('management_keypair', self.keypair_controller)
 
         known_server_id = get_known_resource_id('management_server')
-        known_router_id = get_known_resource_id('router')
         check_for_conflicts('management_security_group', self.sg_controller,
-                            servers_for_deletion={known_server_id},
-                            routers_for_deletion={known_router_id})
+                            servers_for_deletion={known_server_id})
         check_for_conflicts('agents_security_group', self.sg_controller,
-                            servers_for_deletion={known_server_id},
-                            routers_for_deletion={known_router_id})
+                            servers_for_deletion={known_server_id})
 
         known_network_id = get_known_resource_id('int_network')
         known_floating_ip_id = get_known_resource_id('floating_ip')
@@ -510,6 +507,7 @@ class CosmoOnOpenStackDriver(object):
 
         # Skipping ext_network - currently not automatically created/deleted.
 
+        known_router_id = get_known_resource_id('router')
         check_for_conflicts('subnet', self.subnet_controller,
                             servers_for_deletion={known_server_id},
                             routers_for_deletion={known_router_id})
@@ -548,28 +546,28 @@ class CosmoOnOpenStackDriver(object):
 
     def _propagate_conflicts_on_known_resources(self, resources,
                                                 all_conflicts):
-        if len(all_conflicts['management_server']) > 0:
-            known_server_id = resources['management_server']['id']
-            all_conflicts['management_security_group'].append(
-                ('server', known_server_id))
-            all_conflicts['agents_security_group'].append(
-                ('server', known_server_id))
-            all_conflicts['subnet'].append(('server', known_server_id))
+        if resources['management_security_group']['created']:
+            all_conflicts['management_security_group'].update(
+                all_conflicts['management_server'])
+        if resources['agents_security_group']['created']:
+            all_conflicts['agents_security_group'].update(
+                all_conflicts['management_server'])
+        if resources['subnet']['created']:
+            all_conflicts['subnet'].update(
+                all_conflicts['management_server'])
 
-        if len(all_conflicts['floating_ip']) > 0:
-            all_conflicts['router'].append(
-                ('floating_ip', resources['floating_ip']['id']))
+        if resources['router']['created']:
+            all_conflicts['router'].update(all_conflicts['floating_ip'])
+            all_conflicts['router'].update(all_conflicts['subnet'])
+            all_conflicts['router'].update(all_conflicts['int_network'])
 
-        if len(all_conflicts['int_network']) > 0 or \
-           len(all_conflicts['subnet']) > 0 or \
-           len(all_conflicts['router']) > 0:
-            # those three go down or stay up together
-            all_conflicts['router'].append(
-                ('network', resources['int_network']['id']))
-            all_conflicts['subnet'].append(
-                ('router', resources['router']['id']))
-            all_conflicts['int_network'].append(
-                ('subnet', resources['subnet']['id']))
+        if resources['subnet']['created']:
+            all_conflicts['subnet'].update(all_conflicts['router'])
+            all_conflicts['subnet'].update(all_conflicts['int_network'])
+
+        if resources['int_network']['created']:
+            all_conflicts['int_network'].update(all_conflicts['router'])
+            all_conflicts['int_network'].update(all_conflicts['subnet'])
 
     def _delete_resources(self, resources):
         deleted_resources = []
@@ -1516,16 +1514,17 @@ class OpenStackNeutronSecurityGroupController(BaseControllerNeutron):
         return self.neutron_client.show_security_group(id)
 
     def check_for_delete_conflicts(self, sg_id, **kwargs):
-        # checking for collisions with unknown servers
+        # checking for collisions with unknown servers and routers.
+        # note that there's no 'routers_for_deletion' parameter, as we don't
+        # link between any security group and a router port on bootstrap,
+        # so any linked port is in fact a conflict.
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
-        routers_for_deletion = kwargs.get('routers_for_deletion', {})
 
         server_conflicts = []
         router_conflicts = []
         for port in self.neutron_client.list_ports()['ports']:
             if sg_id in port['security_groups']:
-                if port['device_owner'] == 'network:router_interface' and \
-                   port['device_id'] not in routers_for_deletion:
+                if port['device_owner'] == 'network:router_interface':
                     router_conflicts.append(('router', port['device_id']))
                 elif port['device_owner'].startswith('compute') and \
                         port['device_id'] not in servers_for_deletion:
