@@ -23,8 +23,8 @@ keystone:
 #        use_existing: False
 #        name: cloudify-router
 #    agents_security_group:
-#            use_existing: False
-#            name: cloudify-sg-agents
+#        use_existing: False
+#        name: cloudify-sg-agents
 #    management_security_group:
 #        use_existing: False
 #        name: cloudify-sg-management
