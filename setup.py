@@ -17,25 +17,25 @@ __author__ = 'ran'
 
 from setuptools import setup
 
-version = '0.3'
+VERSION = '3.0'
 
 setup(
-    name='cloudify-openstack',
-    version=version,
+    name='cloudify-openstack-provider',
+    version=VERSION,
     author='ran',
     author_email='ran@gigaspaces.com',
     packages=['cloudify_openstack'],
     license='LICENSE',
-    description='the cloudify openstack provider',
+    description='Cloudify OpenStack provider',
     package_data={'cloudify_openstack': ['cloudify-config.yaml',
                                          'cloudify-config.defaults.yaml']},
     install_requires=[
-        "python-novaclient",
-        "python-keystoneclient",
-        "python-neutronclient",
-        "scp",
-        "fabric",
-        "jsonschema",
-        "IPy"
+        "python-novaclient==2.17.0",
+        "python-keystoneclient==0.7.1",
+        "python-neutronclient==2.3.4",
+        "scp==0.7.2",
+        "fabric==1.8.3",
+        "jsonschema==2.3.0",
+        "IPy==0.81"
     ]
 )
