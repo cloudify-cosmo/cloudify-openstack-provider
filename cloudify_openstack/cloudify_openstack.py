@@ -847,53 +847,24 @@ class CosmoOnOpenStackDriver(object):
                                 self._run(command)
 
                         if 'downloads' in value:
-                            self._run('mkdir -p /tmp')
+                            self._run('mkdir -p /tmp/{0}'.format(virtualenv))
                             for download in value['downloads']:
                                 lgr.debug('downloading: ' + download)
                                 self._run('sudo wget {0} -O '
                                           '/tmp/module.tar.gz'
                                           .format(download))
-                                self._run('sudo tar -C /tmp -xvf {0}'
-                                          .format('/tmp/module.tar.gz'))
+                                self._run('sudo tar -C /tmp/{0} -xvf {1}'
+                                          .format(virtualenv,
+                                                  '/tmp/module.tar.gz'))
 
                         if 'installs' in value:
-                            src_wfs = False
-                            src_orc = False
-                            try:
-                                src_wfs = value['installs']['workflow_service']
-                            except:
-                                pass
-                            try:
-                                src_orc = value['installs']['orchestrator']
-                            except:
-                                pass
-                            if src_wfs:
-                                lgr.debug('installing wfs')
-                                dst_wfs = ('{0}/cosmo-manager-*/'
-                                           'workflow-service/'
-                                           .format(virtualenv))
-                                lgr.debug('workflow service config..')
-                                self._run('sudo cp -R {0} {1}'
-                                          .format(src_wfs, dst_wfs))
-                            elif src_orc:
-                                lgr.debug('installing orchestrator')
-                                dst_orc = ('{0}/resources/'.format(virtualenv))
-                                lgr.debug('orchestrator config..')
-                                self._run('sudo cp -R {0} {1}'
-                                          .format('{0}/cloudify/'.format(src_orc),  # NOQA
-                                                  dst_orc))
-                                self._run('sudo cp -R {0} {1}'
-                                          .format('{0}/org/cloudifysource/cosmo/dsl/alias-mappings.yaml'  # NOQA
-                                                  .format(src_orc),  # NOQA
-                                                  '{0}/cloudify/'.format(dst_orc)))  # NOQA
-                            else:
-                                for install in value['installs']:
-                                    lgr.debug('installing: ' + install)
-                                    self._run('sudo {0}/bin/pip '
-                                              '--default-timeout'
-                                              '=45 install {1} --upgrade'
-                                              .format(virtualenv, install))
-
+                            for module in value['installs']:
+                                lgr.debug('installing: ' + module)
+                                self._run('sudo {0}/bin/pip '
+                                          '--default-timeout'
+                                          '=45 install {1}/{2}/{3} --upgrade'
+                                          .format(virtualenv, '/tmp',
+                                                  virtualenv, module))
                         if 'runs' in value:
                             for command in value['runs']:
                                 self._run(command)

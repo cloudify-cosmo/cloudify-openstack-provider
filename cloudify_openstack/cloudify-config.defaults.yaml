@@ -67,46 +67,32 @@ cloudify:
 
 #this section only applies to bootstrapping in --dev-mode
 dev:
-    #each section here is identified with one virtual environment
     celery:
         #which virtualenv dir does this apply to?
         virtualenv: /opt/celery/cloudify.management__worker/env/
         #which shell commands are run before the branches are deployed?
         preruns:
             - echo "Hi!"
+        downloads:
+            - https://github.com/cloudify-cosmo/cloudify-manager/archive/develop.tar.gz
         #which branches will be applied to this virtualenv?
         installs:
-            - https://github.com/CloudifySource/cosmo-plugin-agent-installer/archive/develop.tar.gz
-            - https://github.com/CloudifySource/cosmo-plugin-plugin-installer/archive/develop.tar.gz
-            - https://github.com/CloudifySource/cosmo-plugin-kv-store/archive/develop.tar.gz
-            - https://github.com/CloudifySource/cosmo-celery-common/archive/develop.tar.gz
+            - /cloudify-manager-develop/plugins/agent-installer/
+            - /cloudify-manager-develop/plugins/plugin-installer/
+            - https://github.com/cloudify-cosmo/cloudify-plugins-common/archive/develop.tar.gz
         #which shell commands are run after the branches are deployed?
         runs:
             - sudo /etc/init.d/celeryd-cloudify.management restart
-    rest_server:
+    manager:
         virtualenv: /opt/manager
         downloads:
-            - https://github.com/CloudifySource/cosmo-manager/archive/develop.tar.gz
+            - https://github.com/cloudify-cosmo/cloudify-manager/archive/develop.tar.gz
         installs:
-            - /tmp/cosmo-manager-*/manager-rest/
+            - -e /cloudify-manager-develop/rest-service/
+            - /cloudify-manager-develop/plugins/agent-installer/
+            - /cloudify-manager-develop/plugins/plugin-installer/
         runs:
-            - sudo restart manager
-    workflow_service:
-        virtualenv: /opt/manager
-        downloads:
-            - https://github.com/CloudifySource/cosmo-manager/archive/develop.tar.gz
-        installs:
-            workflow_service: /tmp/cosmo-manager-*/workflow-service/*
-        runs:
-            - sudo restart workflow
-            - sudo status workflow
-    orchestrator:
-        virtualenv: /opt/manager
-        downloads:
-            - https://github.com/CloudifySource/cosmo-manager/archive/develop.tar.gz
-        installs:
-            orchestrator: /tmp/cosmo-manager-*/orchestrator/src/main/resources
-        runs:
+            - cp -R /tmp/cloudify-manager-develop/* /opt/manager
             - sudo restart workflow
             - sudo status workflow
             - sudo restart manager
