@@ -860,11 +860,13 @@ class CosmoOnOpenStackDriver(object):
                         if 'installs' in value:
                             for module in value['installs']:
                                 lgr.debug('installing: ' + module)
+                                if module.startswith('/'):
+                                    module = '/tmp' + virtualenv + module
                                 self._run('sudo {0}/bin/pip '
                                           '--default-timeout'
-                                          '=45 install {1}/{2}/{3} --upgrade'
-                                          .format(virtualenv, '/tmp',
-                                                  virtualenv, module))
+                                          '=45 install {1} --upgrade'
+                                          ' --process-dependency-links'
+                                          .format(virtualenv, module))
                         if 'runs' in value:
                             for command in value['runs']:
                                 self._run(command)
