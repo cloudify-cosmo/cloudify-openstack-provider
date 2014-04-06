@@ -67,6 +67,7 @@ cloudify:
 
 #this section only applies to bootstrapping in --dev-mode
 dev:
+    #each section here is identified with one virtual environment
     celery:
         #which virtualenv dir does this apply to?
         virtualenv: /opt/celery/cloudify.management__worker/env/
@@ -88,11 +89,13 @@ dev:
         downloads:
             - https://github.com/cloudify-cosmo/cloudify-manager/archive/develop.tar.gz
         installs:
-            - /cloudify-manager-develop/rest-service/ -e
+            - /cloudify-manager-develop/rest-service/
             - /cloudify-manager-develop/plugins/agent-installer/
             - /cloudify-manager-develop/plugins/plugin-installer/
         runs:
-            - cp -R /tmp/cloudify-manager-develop/* /opt/manager
+            - sudo cp -R /tmp/opt/manager/cloudify-manager-develop/resources/manager_rest/cloudify /opt/manager/resources  # for resources and workflow service
+            - sudo cp -R /tmp/opt/manager/cloudify-manager-develop/* /opt/manager/cloudify-manager-develop/  # for resources and workflow service
+            - sudo rm -rf /tmp/opt/manager/lib/python2.7/site-packages/manager_rest
             - sudo restart workflow
             - sudo status workflow
             - sudo restart manager
