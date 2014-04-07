@@ -417,11 +417,11 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'management_keypair',
             False,
-            private_key_target_path=
-            mgr_kpconf['auto_generated']['private_key_target_path'] if
+            private_key_target_path=mgr_kpconf['auto_generated']
+                                              ['private_key_target_path'] if
             'auto_generated' in mgr_kpconf else None,
-            public_key_filepath=
-            mgr_kpconf['provided']['public_key_filepath'] if
+            public_key_filepath=mgr_kpconf['provided']
+                                          ['public_key_filepath'] if
             'provided' in mgr_kpconf else None
         )
 
@@ -435,8 +435,8 @@ class CosmoOnOpenStackDriver(object):
             private_key_target_path=agents_kpconf['auto_generated']
             ['private_key_target_path'] if 'auto_generated' in
                                            agents_kpconf else None,
-            public_key_filepath=
-            agents_kpconf['provided']['public_key_filepath'] if
+            public_key_filepath=agents_kpconf['provided']
+                                             ['public_key_filepath'] if
             'provided' in agents_kpconf else None
         )
 
@@ -500,8 +500,7 @@ class CosmoOnOpenStackDriver(object):
 
         known_floating_ip_id = get_known_resource_id('floating_ip')
         check_for_conflicts('router', self.router_controller,
-                            floating_ips_for_deletion=
-                            {known_floating_ip_id})
+                            floating_ips_for_deletion={known_floating_ip_id})
 
         # Skipping ext_network - currently not automatically created/deleted.
 
