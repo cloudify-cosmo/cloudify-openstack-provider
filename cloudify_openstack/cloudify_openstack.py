@@ -696,7 +696,7 @@ class CosmoOnOpenStackDriver(object):
         return False
 
     def _download_package(self, url, path):
-        return self._run_with_retries('sudo wget -T 30 {0} -P {1}'
+        return self._run_with_retries('sudo wget {0} -P {1}'
                                       .format(path, url))
 
     def _unpack(self, path):
@@ -785,7 +785,7 @@ class CosmoOnOpenStackDriver(object):
 
                 lgr.info('downloading cloudify-ui...')
                 r = self._download_package(
-                    CLOUDIFY_AGENT_PACKAGE_PATH,
+                    CLOUDIFY_UI_PACKAGE_PATH,
                     cosmo_config['cloudify_ui_package_url'])
                 if not r:
                     lgr.error('failed to download ui package. '
