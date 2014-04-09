@@ -69,9 +69,10 @@ CONFIG_FILE_NAME = 'cloudify-config.yaml'
 DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
 CLOUDIFY_PACKAGES_PATH = '/cloudify'
-CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify3-components'
-CLOUDIFY_PACKAGE_PATH = '/cloudify3'
-AGENT_PACKAGES_PATH = '/cloudify-agents'
+CLOUDIFY_COMPONENTS_PACKAGE_PATH = '/cloudify-components'
+CLOUDIFY_CORE_PACKAGE_PATH = '/cloudify-core'
+CLOUDIFY_UI_PACKAGE_PATH = '/cloudify-ui'
+CLOUDIFY_AGENT_PACKAGE_PATH = '/cloudify-agents'
 
 verbose_output = False
 
@@ -762,7 +763,7 @@ class CosmoOnOpenStackDriver(object):
                                                      'aborts',
                                                      'warnings'):
 
-                lgr.info('downloading cloudify components package...')
+                lgr.info('downloading cloudify-components package...')
                 r = self._download_package(
                     CLOUDIFY_PACKAGES_PATH,
                     cosmo_config['cloudify_components_package_url'])
@@ -772,31 +773,41 @@ class CosmoOnOpenStackDriver(object):
                               'configured location in the config file')
                     return False
 
-                lgr.info('downloading cloudify package...')
+                lgr.info('downloading cloudify-core package...')
                 r = self._download_package(
                     CLOUDIFY_PACKAGES_PATH,
                     cosmo_config['cloudify_package_url'])
                 if not r:
-                    lgr.error('failed to download cloudify package. '
+                    lgr.error('failed to download core package. '
                               'please ensure package exists in its '
                               'configured location in the config file')
                     return False
 
-                lgr.info('downloading cloudify ubuntu agent...')
+                lgr.info('downloading cloudify-ui...')
                 r = self._download_package(
-                    AGENT_PACKAGES_PATH,
+                    CLOUDIFY_AGENT_PACKAGE_PATH,
+                    cosmo_config['cloudify_ui_package_url'])
+                if not r:
+                    lgr.error('failed to download ui package. '
+                              'please ensure package exists in its '
+                              'configured location in the config file')
+                    return False
+
+                lgr.info('downloading cloudify-ubuntu-agent...')
+                r = self._download_package(
+                    CLOUDIFY_AGENT_PACKAGE_PATH,
                     cosmo_config['cloudify_ubuntu_agent_url'])
                 if not r:
-                    lgr.error('failed to download cloudify ubuntu agent. '
+                    lgr.error('failed to download ubuntu agent. '
                               'please ensure package exists in its '
                               'configured location in the config file')
                     return False
 
-                lgr.info('unpacking cloudify packages...')
+                lgr.info('unpacking cloudify-core packages...')
                 r = self._unpack(
                     CLOUDIFY_PACKAGES_PATH)
                 if not r:
-                    lgr.error('failed to unpack cloudify packages')
+                    lgr.error('failed to unpack cloudify-core package')
                     return False
 
                 lgr.debug('verifying verbosity for installation process')
@@ -804,26 +815,35 @@ class CosmoOnOpenStackDriver(object):
                 self.verbose_output = True
 
                 lgr.info('installing cloudify on {0}...'.format(mgmt_ip))
-                r = self._run('sudo {0}/cloudify3-components-bootstrap.sh'
+                r = self._run('sudo {0}/cloudify-components-bootstrap.sh'
                               .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
                 if not r:
-                    lgr.error('failed to install cloudify components')
+                    lgr.error('failed to install cloudify-components')
                     return False
 
                 celery_user = mgmt_server_config['user_on_management']
-                r = self._run('sudo {0}/cloudify3-bootstrap.sh {1} {2}'
-                              .format(CLOUDIFY_PACKAGE_PATH,
+                r = self._run('sudo {0}/cloudify-core-bootstrap.sh {1} {2}'
+                              .format(CLOUDIFY_CORE_PACKAGE_PATH,
                                       celery_user, private_ip))
                 if not r:
-                    lgr.error('failed to install cloudify core')
+                    lgr.error('failed to install cloudify-core')
                     return False
-                
-                lgr.info('deploying cloudify agent')
+
+                lgr.info('deploying cloudify-ui')
                 self.verbose_output = False
                 r = self._unpack(
-                    AGENT_PACKAGES_PATH)
+                    CLOUDIFY_UI_PACKAGE_PATH)
                 if not r:
-                    lgr.error('failed to install cloudify agent')
+                    lgr.error('failed to install cloudify-ui')
+                    return False
+                lgr.info('done')
+
+                lgr.info('deploying cloudify-ubuntu-agent')
+                self.verbose_output = False
+                r = self._unpack(
+                    CLOUDIFY_AGENT_PACKAGE_PATH)
+                if not r:
+                    lgr.error('failed to install cloudify-ubuntu-agent')
                     return False
                 lgr.info('done')
 
