@@ -807,7 +807,7 @@ class CosmoOnOpenStackDriver(object):
                 r = self._run('sudo {0}/cloudify3-components-bootstrap.sh'
                               .format(CLOUDIFY_COMPONENTS_PACKAGE_PATH))
                 if not r:
-                    lgr.error('failed to install components')
+                    lgr.error('failed to install cloudify components')
                     return False
 
                 celery_user = mgmt_server_config['user_on_management']
@@ -815,15 +815,14 @@ class CosmoOnOpenStackDriver(object):
                               .format(CLOUDIFY_PACKAGE_PATH,
                                       celery_user, private_ip))
                 if not r:
-                    lgr.error('failed to install cloudify')
+                    lgr.error('failed to install cloudify core')
                     return False
 
                 self.verbose_output = False
-                lgr.info('unpacking cloudify agent...')
                 r = self._unpack(
                     AGENT_PACKAGES_PATH)
                 if not r:
-                    lgr.error('failed to unpack cloudify agent')
+                    lgr.error('failed to install cloudify agent')
                     return False
 
                 self.verbose_output = True
