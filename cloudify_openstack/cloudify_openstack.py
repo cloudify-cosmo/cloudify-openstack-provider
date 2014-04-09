@@ -817,13 +817,15 @@ class CosmoOnOpenStackDriver(object):
                 if not r:
                     lgr.error('failed to install cloudify core')
                     return False
-
+                
+                lgr.info('deploying cloudify agent')
                 self.verbose_output = False
                 r = self._unpack(
                     AGENT_PACKAGES_PATH)
                 if not r:
                     lgr.error('failed to install cloudify agent')
                     return False
+                lgr.info('done')
 
                 self.verbose_output = True
                 if dev_mode:
