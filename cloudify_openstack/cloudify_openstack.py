@@ -51,7 +51,7 @@ import neutronclient.neutron.client as neutron_client
 
 EP_FLAG = 'use_existing'
 
-EXTERNAL_MGMT_PORTS = (22, 8100)  # SSH, REST service
+EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 
 INTERNAL_AGENT_PORTS = (22,)
@@ -817,7 +817,7 @@ class CosmoOnOpenStackDriver(object):
                 if not r:
                     lgr.error('failed to install cloudify core')
                     return False
-                
+
                 lgr.info('deploying cloudify agent')
                 self.verbose_output = False
                 r = self._unpack(
