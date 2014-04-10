@@ -136,6 +136,7 @@ def bootstrap(config_path=None, is_verbose_output=False,
 def teardown(provider_context, ignore_validation=False, config_path=None,
              is_verbose_output=False):
     driver = _get_driver(config_path, provider_context,
+                         skip_validations=True,
                          is_verbose_output=is_verbose_output)
     driver.delete_topology(ignore_validation)
 
