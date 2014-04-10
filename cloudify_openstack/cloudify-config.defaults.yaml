@@ -8,25 +8,25 @@ networking:
     neutron_supported_region: True
     neutron_url: https://region-b.geo-1.network.hpcloudsvc.com
     int_network:
-        use_existing: False
+        create_if_missing: False
         name: cloudify-admin-network
     subnet:
-        use_existing: False
+        create_if_missing: False
         name: cloudify-admin-network-subnet
         ip_version: 4
         cidr: 10.67.79.0/24
         dns_nameservers: []
     ext_network:
-        use_existing: True #For now, this must be 'use_existing': True
+        create_if_missing: True #For now, this must be 'create_if_missing': True
         name: Ext-Net
     router:
-        use_existing: False
+        create_if_missing: False
         name: cloudify-router
     agents_security_group:
-        use_existing: False
+        create_if_missing: False
         name: cloudify-sg-agents
     management_security_group:
-        use_existing: False
+        create_if_missing: False
         name: cloudify-sg-management
         cidr: 0.0.0.0/0
 
@@ -37,12 +37,12 @@ compute:
         user_on_management: ubuntu
         userhome_on_management: /home/ubuntu
         instance:
-            use_existing: False
+            create_if_missing: False
             name: cloudify-management-server
             image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
             flavor: 102
         management_keypair:
-            use_existing: False
+            create_if_missing: False
             name: cloudify-management-kp
             #provided:
                 #public_key_filepath: [PUBLIC-KEY-PATH]
@@ -51,7 +51,7 @@ compute:
                 private_key_target_path: ~/.ssh/cloudify-management-kp.pem
     agent_servers:
         agents_keypair:
-            use_existing: False
+            create_if_missing: False
             name: cloudify-agents-kp
             #provided:
                 #public_key_filepath: [PUBLIC-KEY-PATH]
