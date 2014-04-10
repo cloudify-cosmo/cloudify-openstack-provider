@@ -258,7 +258,7 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     # keystone_config = provider_config['keystone']
     networking_config = provider_config['networking']
     compute_config = provider_config['compute']
-    cloudify_config = provider_config['cloudify']
+    # cloudify_config = provider_config['cloudify']
     mgmt_server_config = compute_config['management_server']
     agent_server_config = compute_config['agent_servers']
     # mgmt_instance_config = mgmt_server_config['instance']
@@ -331,13 +331,13 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     verifier._validate_path_owner(
         agent_keypair_config['auto_generated']['private_key_target_path'])
 
-    lgr.info('validating cloudify resources...')
-    verifier._validate_url_accessible(
-        'cloudify.cloudify_components_package_url',
-        cloudify_config['cloudify_components_package_url'])
-    verifier._validate_url_accessible(
-        'cloudify.cloudify_package_url',
-        cloudify_config['cloudify_package_url'])
+    # lgr.info('validating cloudify resources...')
+    # verifier._validate_url_accessible(
+    #     'cloudify.cloudify_components_package_url',
+    #     cloudify_config['cloudify_components_package_url'])
+    # verifier._validate_url_accessible(
+    #     'cloudify.cloudify_package_url',
+    #     cloudify_config['cloudify_package_url'])
 
     # TODO:
     # verifier._validate_security_rules()
@@ -1509,8 +1509,8 @@ class BaseController(object):
             if CREATE_IF_MISSING in provider_config \
                     and not provider_config[CREATE_IF_MISSING]:
                 raise OpenStackLogicError("{0} '{1}' is not configured to"
-                                          "create_if_missing but but does not"
-                                          " exist"
+                                          " create_if_missing but but does not"
+                                          " exist."
                                           .format(self.__class__.WHAT, name))
             the_id = self._create(name, *args, **kw)
             created = True
