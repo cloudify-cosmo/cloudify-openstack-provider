@@ -29,8 +29,10 @@ import socket
 import paramiko
 import urllib
 from stat import ST_MODE
+from pwd import getpwnam, getpwuid
 import tempfile
 import sys
+from getpass import getuser
 from os.path import expanduser
 from copy import deepcopy
 from scp import SCPClient
@@ -256,7 +258,7 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     # keystone_config = provider_config['keystone']
     networking_config = provider_config['networking']
     compute_config = provider_config['compute']
-    # cloudify_config = provider_config['cloudify']
+    cloudify_config = provider_config['cloudify']
     mgmt_server_config = compute_config['management_server']
     agent_server_config = compute_config['agent_servers']
     # mgmt_instance_config = mgmt_server_config['instance']
@@ -264,52 +266,52 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     agent_keypair_config = agent_server_config['agents_keypair']
 
     # validates
-    lgr.info('validating provider configuration and resources...')
+    # lgr.info('validating provider configuration and resources...')
 
-    lgr.info('validating provider configuration...')
-    verifier._validate_cidr_syntax(
-        'networking.subnet.cidr',
-        networking_config['subnet']['cidr'])
-    verifier._validate_cidr_syntax(
-        'networking.management_security_group.cidr',
-        networking_config['management_security_group']['cidr'])
-    verifier._validate_schema(provider_config, schema)
+    # lgr.info('validating provider configuration...')
+    # verifier._validate_cidr_syntax(
+    #     'networking.subnet.cidr',
+    #     networking_config['subnet']['cidr'])
+    # verifier._validate_cidr_syntax(
+    #     'networking.management_security_group.cidr',
+    #     networking_config['management_security_group']['cidr'])
+    # verifier._validate_schema(provider_config, schema)
 
-    lgr.info('validating networking resources...')
-    if 'neutron_url' in networking_config.keys():
-        verifier._validate_url_accessible(
-            'networking.network_url',
-            networking_config['neutron_url'])
-    if 'router' in networking_config.keys():
-        verifier._validate_neutron_resource(
-            networking_config['router'],
-            resource_type='router',
-            method='list_routers')
-    verifier._validate_neutron_resource(
-        networking_config['subnet'],
-        resource_type='subnet',
-        method='list_subnets')
-    verifier._validate_neutron_resource(
-        networking_config['int_network'],
-        resource_type='network',
-        method='list_networks')
-    if 'agents_security_group' in networking_config.keys():
-        verifier._validate_neutron_resource(
-            networking_config['agents_security_group'],
-            resource_type='security_group',
-            method='list_security_groups')
-    verifier._validate_neutron_resource(
-        networking_config['management_security_group'],
-        resource_type='security_group',
-        method='list_security_groups')
-    if 'floating_ip' in mgmt_server_config.keys():
-        verifier._validate_cidr_syntax(
-            'compute.management_server.floating_ip',
-            mgmt_server_config['floating_ip'])
-        verifier._validate_floating_ip(
-            mgmt_server_config['floating_ip'])
-    else:
-        verifier._validate_floating_ip(None)
+    # lgr.info('validating networking resources...')
+    # if 'neutron_url' in networking_config.keys():
+    #     verifier._validate_url_accessible(
+    #         'networking.network_url',
+    #         networking_config['neutron_url'])
+    # if 'router' in networking_config.keys():
+    #     verifier._validate_neutron_resource(
+    #         networking_config['router'],
+    #         resource_type='router',
+    #         method='list_routers')
+    # verifier._validate_neutron_resource(
+    #     networking_config['subnet'],
+    #     resource_type='subnet',
+    #     method='list_subnets')
+    # verifier._validate_neutron_resource(
+    #     networking_config['int_network'],
+    #     resource_type='network',
+    #     method='list_networks')
+    # if 'agents_security_group' in networking_config.keys():
+    #     verifier._validate_neutron_resource(
+    #         networking_config['agents_security_group'],
+    #         resource_type='security_group',
+    #         method='list_security_groups')
+    # verifier._validate_neutron_resource(
+    #     networking_config['management_security_group'],
+    #     resource_type='security_group',
+    #     method='list_security_groups')
+    # if 'floating_ip' in mgmt_server_config.keys():
+    #     verifier._validate_cidr_syntax(
+    #         'compute.management_server.floating_ip',
+    #         mgmt_server_config['floating_ip'])
+    #     verifier._validate_floating_ip(
+    #         mgmt_server_config['floating_ip'])
+    # else:
+    #     verifier._validate_floating_ip(None)
 
     lgr.info('validating compute resources...')
     verifier._validate_image_exists(
@@ -323,15 +325,19 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
         mgmt_keypair_config['auto_generated']['private_key_target_path'])
     verifier._validate_key_perms(
         'compute.agent_servers.agents_keypair',
-        agent_keypair_config['auto_generated']['private_key_target_path'])  # NOQA
+        agent_keypair_config['auto_generated']['private_key_target_path'])
+    verifier._validate_path_owner(
+        mgmt_keypair_config['auto_generated']['private_key_target_path'])
+    verifier._validate_path_owner(
+        agent_keypair_config['auto_generated']['private_key_target_path'])
 
-    # lgr.info('validating cloudify resources...')
-    # verifier._validate_url_accessible(
-    #     'cloudify.cloudify_components_package_url',
-    #     cloudify_config['cloudify_components_package_url'])
-    # verifier._validate_url_accessible(
-    #     'cloudify.cloudify_package_url',
-    #     cloudify_config['cloudify_package_url'])
+    lgr.info('validating cloudify resources...')
+    verifier._validate_url_accessible(
+        'cloudify.cloudify_components_package_url',
+        cloudify_config['cloudify_components_package_url'])
+    verifier._validate_url_accessible(
+        'cloudify.cloudify_package_url',
+        cloudify_config['cloudify_package_url'])
 
     # TODO:
     # verifier._validate_security_rules()
@@ -557,6 +563,30 @@ class OpenStackValidator:
             return
         lgr.debug('VALIDATED:'
                   'url {0} is accessible'.format(package_url))
+
+    def _validate_path_owner(self, path):
+        global validated
+
+        lgr.debug('checking whether dir {0} is owned by the current user'
+                  .format(path))
+
+        home = os.path.expanduser("~")
+        if path.startswith('~'):
+            path = path.replace('~', home)
+        user = getuser()
+
+        owner = getpwuid(os.stat(path).st_uid).pw_name
+        current_user_id = str(getpwnam(user).pw_uid)
+        owner_id = str(os.stat(path).st_uid)
+        if not current_user_id == owner_id:
+            lgr.error('VALIDATION ERROR:'
+                      '{0} is not owned by the current user'
+                      ' (it is owned by {1})'
+                      .format(path, owner))
+            validated = False
+            return
+        lgr.debug('VALIDATED:'
+                  '{0} is owned by the current user'.format(path))
 
     def _validate_schema(self, provider_config, schema):
         global validated
