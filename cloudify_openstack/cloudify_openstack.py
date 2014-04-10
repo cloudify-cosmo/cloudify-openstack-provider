@@ -266,52 +266,52 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     agent_keypair_config = agent_server_config['agents_keypair']
 
     # validates
-    # lgr.info('validating provider configuration and resources...')
+    lgr.info('validating provider configuration and resources...')
 
-    # lgr.info('validating provider configuration...')
-    # verifier._validate_cidr_syntax(
-    #     'networking.subnet.cidr',
-    #     networking_config['subnet']['cidr'])
-    # verifier._validate_cidr_syntax(
-    #     'networking.management_security_group.cidr',
-    #     networking_config['management_security_group']['cidr'])
-    # verifier._validate_schema(provider_config, schema)
+    lgr.info('validating provider configuration...')
+    verifier._validate_cidr_syntax(
+        'networking.subnet.cidr',
+        networking_config['subnet']['cidr'])
+    verifier._validate_cidr_syntax(
+        'networking.management_security_group.cidr',
+        networking_config['management_security_group']['cidr'])
+    verifier._validate_schema(provider_config, schema)
 
-    # lgr.info('validating networking resources...')
-    # if 'neutron_url' in networking_config.keys():
-    #     verifier._validate_url_accessible(
-    #         'networking.network_url',
-    #         networking_config['neutron_url'])
-    # if 'router' in networking_config.keys():
-    #     verifier._validate_neutron_resource(
-    #         networking_config['router'],
-    #         resource_type='router',
-    #         method='list_routers')
-    # verifier._validate_neutron_resource(
-    #     networking_config['subnet'],
-    #     resource_type='subnet',
-    #     method='list_subnets')
-    # verifier._validate_neutron_resource(
-    #     networking_config['int_network'],
-    #     resource_type='network',
-    #     method='list_networks')
-    # if 'agents_security_group' in networking_config.keys():
-    #     verifier._validate_neutron_resource(
-    #         networking_config['agents_security_group'],
-    #         resource_type='security_group',
-    #         method='list_security_groups')
-    # verifier._validate_neutron_resource(
-    #     networking_config['management_security_group'],
-    #     resource_type='security_group',
-    #     method='list_security_groups')
-    # if 'floating_ip' in mgmt_server_config.keys():
-    #     verifier._validate_cidr_syntax(
-    #         'compute.management_server.floating_ip',
-    #         mgmt_server_config['floating_ip'])
-    #     verifier._validate_floating_ip(
-    #         mgmt_server_config['floating_ip'])
-    # else:
-    #     verifier._validate_floating_ip(None)
+    lgr.info('validating networking resources...')
+    if 'neutron_url' in networking_config.keys():
+        verifier._validate_url_accessible(
+            'networking.network_url',
+            networking_config['neutron_url'])
+    if 'router' in networking_config.keys():
+        verifier._validate_neutron_resource(
+            networking_config['router'],
+            resource_type='router',
+            method='list_routers')
+    verifier._validate_neutron_resource(
+        networking_config['subnet'],
+        resource_type='subnet',
+        method='list_subnets')
+    verifier._validate_neutron_resource(
+        networking_config['int_network'],
+        resource_type='network',
+        method='list_networks')
+    if 'agents_security_group' in networking_config.keys():
+        verifier._validate_neutron_resource(
+            networking_config['agents_security_group'],
+            resource_type='security_group',
+            method='list_security_groups')
+    verifier._validate_neutron_resource(
+        networking_config['management_security_group'],
+        resource_type='security_group',
+        method='list_security_groups')
+    if 'floating_ip' in mgmt_server_config.keys():
+        verifier._validate_cidr_syntax(
+            'compute.management_server.floating_ip',
+            mgmt_server_config['floating_ip'])
+        verifier._validate_floating_ip(
+            mgmt_server_config['floating_ip'])
+    else:
+        verifier._validate_floating_ip(None)
 
     lgr.info('validating compute resources...')
     verifier._validate_image_exists(
