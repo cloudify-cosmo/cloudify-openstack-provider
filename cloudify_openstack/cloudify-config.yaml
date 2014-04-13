@@ -17,7 +17,7 @@ keystone:
 #        cidr: 10.67.79.0/24
 #        dns_nameservers: []
 #    ext_network:
-#        create_if_missing: True #For now, this must be 'create_if_missing': True
+#        create_if_missing: False #For now, this must be 'create_if_missing': False
 #        name: Ext-Net
 #    router:
 #        create_if_missing: False

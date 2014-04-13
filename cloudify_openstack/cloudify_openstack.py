@@ -420,14 +420,13 @@ class OpenStackValidator:
             if ips_amount < ips_quota:
                 lgr.debug('VALIDATED:'
                           'a new ip can be allocated.'
-                          ' provisioned ips: {1}, quota: {2}'
-                          .format(floating_ip,
-                                  ips_amount, ips_quota))
+                          ' provisioned ips: {0}, quota: {1}'
+                          .format(ips_amount, ips_quota))
             else:
                 lgr.error('VALIDATION ERROR:'
                           'a floating ip cannot be allocated due'
                           ' to quota limitations.'
-                          ' privisioned ips: {1}, quota: {2}'
+                          ' privisioned ips: {0}, quota: {1}'
                           .format(ips_amount, ips_quota))
                 validated = False
 
@@ -596,7 +595,7 @@ class OpenStackValidator:
         v = Draft4Validator(schema)
         if v.iter_errors(provider_config):
             errors = ';\n'.join('config file validation error found at key:'
-                                ' %s, %s' % ('.'.join(e.path), e.message)
+                                ' {0}, {1}'.format('.'.join(e.path), e.message)
                                 for e in v.iter_errors(provider_config))
         try:
             v.validate(provider_config)
