@@ -27,7 +27,7 @@ OPENSTACK_SCHEMA = {
             "type":"object",        
             "required":[
                 'cloudify_components_package_url',
-                'cloudify_package_url',
+                'cloudify_core_package_url',
             ],
             "properties":{
                 "cloudify_branch": {
@@ -42,7 +42,7 @@ OPENSTACK_SCHEMA = {
                 "cloudify_package_path": {
                     "type":"string",                
                 },
-                "cloudify_package_url": {
+                "cloudify_core_package_url": {
                     "type":"string",                
                 },
                 "cloudify_packages_path": {
