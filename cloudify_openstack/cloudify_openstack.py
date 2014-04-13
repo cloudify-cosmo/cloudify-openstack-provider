@@ -78,6 +78,7 @@ CLOUDIFY_PACKAGE_PATH = '/cloudify3'
 AGENT_PACKAGES_PATH = '/cloudify-agents'
 
 verbose_output = False
+validation_errors = {}
 
 
 # initialize logger
@@ -147,7 +148,7 @@ def _get_driver(config_path, provider_context=None,
     provider_config = _read_config(config_path)
     provider_context = provider_context if provider_context else {}
     if not skip_validations and \
-            not _validate_config(provider_config):
+            _validate_config(provider_config):
         raise RuntimeError('process terminated due to '
                            'validation failures')
 
@@ -243,9 +244,8 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     """
     _set_global_verbosity_level(is_verbose_output)
 
-    global validated
-    # assume validations successful
-    validated = True
+    # global validation_errors
+    # assume validation succeeded
 
     # get openstack clients
     connector = OpenStackConnector(provider_config)
@@ -279,10 +279,10 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     verifier._validate_schema(provider_config, schema)
 
     lgr.info('validating networking resources...')
-    if 'neutron_url' in networking_config.keys():
-        verifier._validate_url_accessible(
-            'networking.network_url',
-            networking_config['neutron_url'])
+    # if 'neutron_url' in networking_config.keys():
+    #     verifier._validate_url_accessible(
+    #         'networking.network_url',
+    #         networking_config['neutron_url'])
     if 'router' in networking_config.keys():
         verifier._validate_neutron_resource(
             networking_config['router'],
@@ -348,12 +348,13 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     # undeliverable due to nova client bug
     # verifier._validate_instance_quota()
 
-    if validated:
+    if not validation_errors:
         lgr.info('provider configuration and resources validated successfully')
-        return True
     else:
         lgr.error('provider configuration and resources validation failed!')
-        return False
+    print json.dumps(validation_errors, sort_keys=True,
+                     indent=4, separators=(',', ': '))
+    return validation_errors
 
 
 def _format_resource_name(res_type, res_id, res_name=None):
@@ -381,17 +382,11 @@ class OpenStackValidator:
         self.keystone_client = keystone_client
 
     def _get_neutron_quota(self, resource):
-        global validated
-
         quotas = self.neutron_client.show_quota(
             self.keystone_client.tenant_id)['quota']
-        # print json.dumps(quotas, sort_keys=True,
-        #                  indent=4, separators=(',', ': '))
         return quotas[resource]
 
     def _validate_floating_ip(self, floating_ip):
-        global validated
-
         lgr.debug('checking whether floating_ip {0} exists...'
                   .format(floating_ip))
         ips = self.neutron_client.list_floatingips()
@@ -403,16 +398,16 @@ class OpenStackValidator:
                               'floating_ip {0} is allocated'
                               .format(floating_ip))
                 else:
-                    lgr.error('VALIDATION ERROR:'
-                              'floating_ip {0} is not allocated.'
-                              ' please provide an allocated address'
-                              ' or comment the floating_ip line in the config'
-                              ' and one will be allocated for you.'
-                              .format(floating_ip))
+                    err = ('floating_ip {0} is not allocated.'
+                           ' please provide an allocated address'
+                           ' or comment the floating_ip line in the config'
+                           ' and one will be allocated for you.'
+                           .format(floating_ip))
+                    lgr.error('VALIDATION ERROR:' + err)
                     lgr.info('list of available floating ips:')
                     for ip in ips['floatingips']:
                         lgr.info('    {0}'.format(ip['floating_ip_address']))
-                    validated = False
+                    validation_errors.setdefault('networking', []).append(err)
         else:
             lgr.debug('checking whether quota allows allocation'
                       ' of new floating ips')
@@ -423,23 +418,19 @@ class OpenStackValidator:
                           ' provisioned ips: {0}, quota: {1}'
                           .format(ips_amount, ips_quota))
             else:
-                lgr.error('VALIDATION ERROR:'
-                          'a floating ip cannot be allocated due'
-                          ' to quota limitations.'
-                          ' privisioned ips: {0}, quota: {1}'
-                          .format(ips_amount, ips_quota))
-                validated = False
+                err = ('a floating ip cannot be allocated due'
+                       ' to quota limitations.'
+                       ' privisioned ips: {0}, quota: {1}'
+                       .format(ips_amount, ips_quota))
+                lgr.error('VALIDATION ERROR:' + err)
+                validation_errors.setdefault('networking', []).append(err)
 
     def _validate_neutron_resource(self, resource_config, resource_type,
                                    method):
-        global validated
-
         lgr.debug('checking whether {0} {1} exists...'
                   .format(resource_type, resource_config['name']))
         resource_dict = getattr(self.neutron_client, method)()
         resource_amount = len(resource_dict)
-        # print json.dumps(resource_dict, sort_keys=True,
-        #                  indent=4, separators=(',', ': '))
         for type, all in resource_dict.iteritems():
             for resource in all:
                 if resource['name'] == resource_config['name']:
@@ -448,17 +439,17 @@ class OpenStackValidator:
                               .format(resource_type, resource_config['name']))
                     return
         if not resource_config[CREATE_IF_MISSING]:
-            lgr.error('VALIDATION ERROR:'
-                      '{0} {1} does not exist in the pool but is marked as'
-                      ' create_if_missing = False. please provide an existing'
-                      ' resource name or change create_if_missing = True'
-                      ' to automatically create a new resource.'
-                      .format(resource_type, resource_config['name']))
+            err = ('{0} {1} does not exist in the pool but is marked as'
+                   ' create_if_missing = False. please provide an existing'
+                   ' resource name or change create_if_missing = True'
+                   ' to automatically create a new resource.'
+                   .format(resource_type, resource_config['name']))
+            lgr.error('VALIDATION ERROR:' + err)
             lgr.info('list of available {0}s:'.format(resource_type))
             for type, all in resource_dict.iteritems():
                 for resource in all:
                     lgr.info('    {0}'.format(resource['name']))
-            validated = False
+            validation_errors.setdefault('networking', []).append(err)
         else:
             resource_quota = self._get_neutron_quota(resource_type)
             if resource_amount < resource_quota:
@@ -469,18 +460,16 @@ class OpenStackValidator:
                                   resource_type, resource_amount,
                                   resource_quota))
             else:
-                lgr.error('VALIDATION ERROR:'
-                          '{0} {1} cannot be created due'
-                          ' to quota limitations.'
-                          ' privisioned {2}s: {3}, quota: {4}'
-                          .format(resource_type, resource_config['name'],
-                                  resource_type, resource_amount,
-                                  resource_quota))
-                validated = False
+                err = ('{0} {1} cannot be created due'
+                       ' to quota limitations.'
+                       ' privisioned {2}s: {3}, quota: {4}'
+                       .format(resource_type, resource_config['name'],
+                               resource_type, resource_amount,
+                               resource_quota))
+                lgr.error('VALIDATION ERROR:' + err)
+                validation_errors.setdefault('networking', []).append(err)
 
     def _validate_cidr_syntax(self, field, cidr):
-        global validated
-
         lgr.debug('checking whether {0} is a valid address range...'
                   .format(cidr))
         try:
@@ -488,14 +477,12 @@ class OpenStackValidator:
             lgr.debug('VALIDATED:'
                       '{0} is a valid address range.'.format(cidr))
         except ValueError as e:
-            validated = False
-            lgr.error('VALIDATION ERROR:'
-                      'config file validation error found at key:'
-                      ' {0}. {1}'.format(field, e.message))
+            err = ('config file validation error found at key:'
+                   ' {0}. {1}'.format(field, e.message))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('networking', []).append(err)
 
     def _validate_image_exists(self, field, image):
-        global validated
-
         image = str(image)
         lgr.debug('checking whether image {0} exists...'.format(image))
         images = self.nova_client.images.list()
@@ -504,16 +491,14 @@ class OpenStackValidator:
                 lgr.debug('VALIDATED:'
                           'image {0} exists'.format(image))
                 return
-        lgr.error('VALIDATION ERROR:'
-                  'image {0} does not exist'.format(image))
+        err = ('image {0} does not exist'.format(image))
+        lgr.error('VALIDATION ERROR:' + err)
         lgr.info('list of available images:')
         for i in images:
             lgr.info('    {0}'.format(i.name))
-        validated = False
+        validation_errors.setdefault('compute', []).append(err)
 
     def _validate_flavor_exists(self, field, flavor):
-        global validated
-
         flavor = str(flavor)
         lgr.debug('checking whether flavor {0} exists...'.format(flavor))
         flavors = self.nova_client.flavors.list()
@@ -522,51 +507,40 @@ class OpenStackValidator:
                 lgr.debug('VALIDATED:'
                           'flavor {0} exists'.format(flavor))
                 return
-        lgr.error('VALIDATION ERROR:'
-                  'flavor {0} does not exist'.format(flavor))
+        err = ('flavor {0} does not exist'.format(flavor))
+        lgr.error('VALIDATION ERROR:' + err)
         lgr.info('list of available flavors:')
         for f in flavors:
             lgr.info('    {0}'.format(f.name))
-        validated = False
-
-    def _validate_instance_quota(self):
-        global validated
-
-        lgr.debug('checking whether instances are available...')
+        validation_errors.setdefault('compute', []).append(err)
 
     def _validate_key_perms(self, field, key_path):
-        global validated
-
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         home = os.path.expanduser("~")
         if key_path.startswith('~'):
             key_path = key_path.replace('~', home)
         if not oct(os.stat(key_path)[ST_MODE])[-3:] in VALID_KEY_PERMS:
-            lgr.error('VALIDATION ERROR:'
-                      'ssh key {0} does not have the correct permissions'
-                      '({1}).'.format(key_path, VALID_KEY_PERMS))
-            validated = False
+            err = ('ssh key {0} does not have the correct permissions'
+                   '({1}).'.format(key_path, VALID_KEY_PERMS))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('copmute', []).append(err)
             return
         lgr.debug('VALIDATED:'
                   'ssh key {0} has the correct permissions'.format(key_path))
 
     def _validate_url_accessible(self, field, package_url):
-        global validated
-
         lgr.debug('checking whether url {0} is accessible'.format(package_url))
         status = urllib.urlopen(package_url).getcode()
         if not status == 200:
-            lgr.error('VALIDATION ERROR:'
-                      'url {0} is not accessible'.format(package_url))
-            validated = False
+            err = ('url {0} is not accessible'.format(package_url))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('cloudify', []).append(err)
             return
         lgr.debug('VALIDATED:'
                   'url {0} is accessible'.format(package_url))
 
     def _validate_path_owner(self, path):
-        global validated
-
         lgr.debug('checking whether dir {0} is owned by the current user'
                   .format(path))
 
@@ -579,28 +553,27 @@ class OpenStackValidator:
         current_user_id = str(getpwnam(user).pw_uid)
         owner_id = str(os.stat(path).st_uid)
         if not current_user_id == owner_id:
-            lgr.error('VALIDATION ERROR:'
-                      '{0} is not owned by the current user'
-                      ' (it is owned by {1})'
-                      .format(path, owner))
-            validated = False
+            err = ('{0} is not owned by the current user'
+                   ' (it is owned by {1})'
+                   .format(path, owner))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('compute', []).append(err)
             return
         lgr.debug('VALIDATED:'
                   '{0} is owned by the current user'.format(path))
 
     def _validate_schema(self, provider_config, schema):
-        global validated
-
         lgr.debug('validating config file against provided schema...')
         v = Draft4Validator(schema)
         if v.iter_errors(provider_config):
-            errors = ';\n'.join('config file validation error found at key:'
-                                ' {0}, {1}'.format('.'.join(e.path), e.message)
-                                for e in v.iter_errors(provider_config))
+            for e in v.iter_errors(provider_config):
+                err = ('config file validation error found at key:'
+                       ' {0}, {1}'.format('.'.join(e.path), e.message))
+                validation_errors.setdefault('schema', []).append(err)
+            errors = ';\n'.join(err for e in v.iter_errors(provider_config))
         try:
             v.validate(provider_config)
         except ValidationError:
-            validated = False
             lgr.error('VALIDATION ERROR:'
                       '{0}'.format(errors))
 
