@@ -776,7 +776,7 @@ class CosmoOnOpenStackDriver(object):
                 lgr.info('downloading cloudify-core package...')
                 r = self._download_package(
                     CLOUDIFY_PACKAGES_PATH,
-                    cosmo_config['cloudify_package_url'])
+                    cosmo_config['cloudify_core_package_url'])
                 if not r:
                     lgr.error('failed to download core package. '
                               'please ensure package exists in its '
