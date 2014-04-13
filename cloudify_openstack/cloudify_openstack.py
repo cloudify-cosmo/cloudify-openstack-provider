@@ -353,8 +353,8 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
         lgr.info('provider configuration and resources validated successfully')
     else:
         lgr.error('provider configuration and resources validation failed!')
-    print json.dumps(validation_errors, sort_keys=True,
-                     indent=4, separators=(',', ': '))
+    # print json.dumps(validation_errors, sort_keys=True,
+    #                  indent=4, separators=(',', ': '))
     return validation_errors
 
 
