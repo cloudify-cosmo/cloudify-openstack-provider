@@ -271,84 +271,84 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     lgr.info('validating provider configuration and resources...')
 
     lgr.info('validating provider configuration...')
-    verifier._validate_cidr_syntax(
+    verifier.validate_cidr_syntax(
         'networking.subnet.cidr',
         networking_config['subnet']['cidr'])
-    verifier._validate_cidr_syntax(
+    verifier.validate_cidr_syntax(
         'networking.management_security_group.cidr',
         networking_config['management_security_group']['cidr'])
-    verifier._validate_schema(provider_config, schema)
+    verifier.validate_schema(provider_config, schema)
 
     lgr.info('validating networking resources...')
     if 'neutron_url' in networking_config.keys():
-        verifier._validate_url_accessible(
+        verifier.validate_url_accessible(
              'networking.network_url',
              networking_config['neutron_url'])
     if 'router' in networking_config.keys():
-        verifier._validate_neutron_resource(
+        verifier.validate_neutron_resource(
             networking_config['router'],
             resource_type='router',
             method='list_routers')
-    verifier._validate_neutron_resource(
+    verifier.validate_neutron_resource(
         networking_config['subnet'],
         resource_type='subnet',
         method='list_subnets')
-    verifier._validate_neutron_resource(
+    verifier.validate_neutron_resource(
         networking_config['int_network'],
         resource_type='network',
         method='list_networks')
     if 'agents_security_group' in networking_config.keys():
-        verifier._validate_neutron_resource(
+        verifier.validate_neutron_resource(
             networking_config['agents_security_group'],
             resource_type='security_group',
             method='list_security_groups')
-    verifier._validate_neutron_resource(
+    verifier.validate_neutron_resource(
         networking_config['management_security_group'],
         resource_type='security_group',
         method='list_security_groups')
     if 'floating_ip' in mgmt_server_config.keys():
-        verifier._validate_cidr_syntax(
+        verifier.validate_cidr_syntax(
             'compute.management_server.floating_ip',
             mgmt_server_config['floating_ip'])
-        verifier._validate_floating_ip(
+        verifier.validate_floating_ip(
             mgmt_server_config['floating_ip'])
     else:
-        verifier._validate_floating_ip(None)
+        verifier.validate_floating_ip(None)
 
     lgr.info('validating compute resources...')
-    verifier._validate_image_exists(
+    verifier.validate_image_exists(
         'compute.management_server.instance.image',
         mgmt_server_config['instance']['image'])
-    verifier._validate_flavor_exists(
+    verifier.validate_flavor_exists(
         'compute.management_server.instance.flavor',
         mgmt_server_config['instance']['flavor'])
-    verifier._validate_key_perms(
+    verifier.validate_key_perms(
         'compute.management_server.management_keypair',
         mgmt_keypair_config['auto_generated']['private_key_target_path'])
-    verifier._validate_key_perms(
+    verifier.validate_key_perms(
         'compute.agent_servers.agents_keypair',
         agent_keypair_config['auto_generated']['private_key_target_path'])
-    verifier._validate_path_owner(
+    verifier.validate_path_owner(
         mgmt_keypair_config['auto_generated']['private_key_target_path'])
-    verifier._validate_path_owner(
+    verifier.validate_path_owner(
         agent_keypair_config['auto_generated']['private_key_target_path'])
 
     # TODO: check cloudify package url accessiblity from within the instance
     # lgr.info('validating cloudify resources...')
-    # verifier._validate_url_accessible(
+    # verifier.validate_url_accessible(
     #     'cloudify.cloudify_components_package_url',
     #     cloudify_config['cloudify_components_package_url'])
-    # verifier._validate_url_accessible(
+    # verifier.validate_url_accessible(
     #     'cloudify.cloudify_package_url',
     #     cloudify_config['cloudify_package_url'])
 
     # TODO:
-    # verifier._validate_security_rules()
+    # verifier.validate_security_rules()
     # undeliverable due to keystone client bug
-    # verifier._validate_keystone_service_exists('nova')
-    # verifier._validate_keystone_service_exists('neutron')
+    # verifier.validate_keystone_service_exists('nova')
+    # verifier.validate_keystone_service_exists('neutron')
     # undeliverable due to nova client bug
-    # verifier._validate_instance_quota()
+    # verifier.validate_instance_quota()
 
     if not validation_errors:
         lgr.info('provider configuration and resources validated successfully')
@@ -387,7 +387,7 @@ class OpenStackValidator:
             self.keystone_client.tenant_id)['quota']
         return quotas[resource]
 
-    def _validate_floating_ip(self, floating_ip):
+    def validate_floating_ip(self, floating_ip):
         lgr.debug('checking whether floating_ip {0} exists...'
                   .format(floating_ip))
         ips = self.neutron_client.list_floatingips()
@@ -426,7 +426,7 @@ class OpenStackValidator:
                 lgr.error('VALIDATION ERROR:' + err)
                 validation_errors.setdefault('networking', []).append(err)
 
-    def _validate_neutron_resource(self, resource_config, resource_type,
+    def validate_neutron_resource(self, resource_config, resource_type,
                                    method):
         lgr.debug('checking whether {0} {1} exists...'
                   .format(resource_type, resource_config['name']))
@@ -470,7 +470,7 @@ class OpenStackValidator:
                 lgr.error('VALIDATION ERROR:' + err)
                 validation_errors.setdefault('networking', []).append(err)
 
-    def _validate_cidr_syntax(self, field, cidr):
+    def validate_cidr_syntax(self, field, cidr):
         lgr.debug('checking whether {0} is a valid address range...'
                   .format(cidr))
         try:
@@ -483,7 +483,7 @@ class OpenStackValidator:
             lgr.error('VALIDATION ERROR:' + err)
             validation_errors.setdefault('networking', []).append(err)
 
-    def _validate_image_exists(self, field, image):
+    def validate_image_exists(self, field, image):
         image = str(image)
         lgr.debug('checking whether image {0} exists...'.format(image))
         images = self.nova_client.images.list()
@@ -499,7 +499,7 @@ class OpenStackValidator:
             lgr.info('    {0}'.format(i.name))
         validation_errors.setdefault('compute', []).append(err)
 
-    def _validate_flavor_exists(self, field, flavor):
+    def validate_flavor_exists(self, field, flavor):
         flavor = str(flavor)
         lgr.debug('checking whether flavor {0} exists...'.format(flavor))
         flavors = self.nova_client.flavors.list()
@@ -515,7 +515,7 @@ class OpenStackValidator:
             lgr.info('    {0}'.format(f.name))
         validation_errors.setdefault('compute', []).append(err)
 
-    def _validate_key_perms(self, field, key_path):
+    def validate_key_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         home = os.path.expanduser("~")
@@ -530,7 +530,7 @@ class OpenStackValidator:
         lgr.debug('VALIDATED:'
                   'ssh key {0} has the correct permissions'.format(key_path))
 
-    def _validate_url_accessible(self, field, package_url):
+    def validate_url_accessible(self, field, package_url):
         lgr.debug('checking whether url {0} is accessible'.format(package_url))
         status = urllib.urlopen(package_url).getcode()
         if not status == 200:
@@ -541,7 +541,7 @@ class OpenStackValidator:
         lgr.debug('VALIDATED:'
                   'url {0} is accessible'.format(package_url))
 
-    def _validate_path_owner(self, path):
+    def validate_path_owner(self, path):
         lgr.debug('checking whether dir {0} is owned by the current user'
                   .format(path))
 
@@ -563,7 +563,7 @@ class OpenStackValidator:
         lgr.debug('VALIDATED:'
                   '{0} is owned by the current user'.format(path))
 
-    def _validate_schema(self, provider_config, schema):
+    def validate_schema(self, provider_config, schema):
         lgr.debug('validating config file against provided schema...')
         v = Draft4Validator(schema)
         if v.iter_errors(provider_config):
