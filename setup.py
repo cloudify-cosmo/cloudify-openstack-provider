@@ -33,9 +33,6 @@ setup(
         "python-novaclient",
         "python-keystoneclient",
         "python-neutronclient",
-        "scp",
-        "fabric",
-        "jsonschema",
         "IPy"
     ]
 )

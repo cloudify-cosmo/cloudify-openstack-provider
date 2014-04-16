@@ -66,6 +66,12 @@ class ProviderManager(BaseProviderClass):
 
     def provision(self):
         set_global_verbosity_level(self.is_verbose_output)
+        lgr.info('validating provider resources and configuration')
+        if self.validate():
+            lgr.info('provider validations completed successfully')
+        else:
+            lgr.error('provider validations failed!')
+            sys.exit(1)
         driver = self._get_driver()
         mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
