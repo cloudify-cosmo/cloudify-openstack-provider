@@ -104,9 +104,9 @@ class ProviderManager(BaseProviderClass):
          resources to be used during teardown)
         """
         set_global_verbosity_level(self.is_verbose_output)
-        lgr.info('validating provider resources and configuration')
-        # if the validation_errors dict returns empty
         if not skip_validations:
+            lgr.info('validating provider resources and configuration')
+            # if the validation_errors dict returns empty
             if not self.validate():
                 lgr.info('provider validations completed successfully')
             else:
