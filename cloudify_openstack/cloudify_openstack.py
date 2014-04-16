@@ -393,22 +393,25 @@ class OpenStackValidator:
         ips = self.neutron_client.list_floatingips()
         ips_amount = len(ips['floatingips'])
         if floating_ip is not None:
+            found_floating_ip = False
             for ip in ips['floatingips']:
                 if ip['floating_ip_address'] == floating_ip:
                     lgr.debug('VALIDATED:'
                               'floating_ip {0} is allocated'
                               .format(floating_ip))
-                else:
-                    err = ('floating_ip {0} is not allocated.'
-                           ' please provide an allocated address'
-                           ' or comment the floating_ip line in the config'
-                           ' and one will be allocated for you.'
-                           .format(floating_ip))
-                    lgr.error('VALIDATION ERROR:' + err)
-                    lgr.info('list of available floating ips:')
-                    for ip in ips['floatingips']:
-                        lgr.info('    {0}'.format(ip['floating_ip_address']))
-                    validation_errors.setdefault('networking', []).append(err)
+                    found_floating_ip = True
+                    break
+            if not found_floating_ip:
+                err = ('floating_ip {0} is not allocated.'
+                       ' please provide an allocated address'
+                       ' or comment the floating_ip line in the config'
+                       ' and one will be allocated for you.'
+                       .format(floating_ip))
+                lgr.error('VALIDATION ERROR:' + err)
+                lgr.info('list of available floating ips:')
+                for ip in ips['floatingips']:
+                    lgr.info('    {0}'.format(ip['floating_ip_address']))
+                validation_errors.setdefault('networking', []).append(err)
         else:
             lgr.debug('checking whether quota allows allocation'
                       ' of new floating ips')
