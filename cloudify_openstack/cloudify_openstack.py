@@ -18,27 +18,22 @@ __author__ = 'ran'
 
 # Standard
 import os
-import shutil
+import errno
 import inspect
 import itertools
 import time
-import json
-import tempfile
-import paramiko
-import socket
-import errno
+# import yaml
+import sys
 from os.path import expanduser
-from scp import SCPClient
-import logging
-import logging.config
-from schemas import PROVIDER_SCHEMA
 
-from cosmo_cli.cosmo_cli import logger
-from cosmo_cli.cosmo_cli import _set_global_verbosity_level
+# from CLI
+from cosmo_cli.cosmo_cli import init_logger
+from cosmo_cli.cosmo_cli import set_global_verbosity_level
 from cosmo_cli.cosmo_cli import BaseProviderClass
 
 # Validator
 from IPy import IP
+from schemas import PROVIDER_SCHEMA
 
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
@@ -48,23 +43,19 @@ import neutronclient.neutron.client as neutron_client
 
 EP_FLAG = 'use_existing'
 
-EXTERNAL_MGMT_PORTS = (22, 8100)  # SSH, REST service
+EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 
 INTERNAL_AGENT_PORTS = (22,)
 
-SSH_CONNECT_RETRIES = 12
-SSH_CONNECT_SLEEP = 5
-SSH_CONNECT_PORT = 22
+CONFIG_FILE_NAME = 'cloudify-config.yaml'
+DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
 
 verbose_output = False
 
-# http://stackoverflow.com/questions/8144545/turning-off-logging-in-paramiko
-logging.getLogger("paramiko").setLevel(logging.WARNING)
-logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(
-    logging.ERROR)
 
-lgr, flgr = logger()
+# initialize logger
+lgr, flgr = init_logger()
 
 
 class ProviderManager(BaseProviderClass):
@@ -73,100 +64,70 @@ class ProviderManager(BaseProviderClass):
         self.provider_config = provider_config
         self.is_verbose_output = is_verbose_output
 
-    def provision(self, keep_up=False):
-        """
-        provisions resources in the provider before bootstrapping
-        the management server. This can include (for instance)
-        network, keypairs, security groups and an instance.
-        at the very least, an instance is required.
-        This should return
-        a hash containing the instance's attached ip, its private ip,
-        its ssh key path and its ssh user.
-        (upon error, this should return None)
-        """
-        _set_global_verbosity_level(self.is_verbose_output)
-        # implement the resource provisioning process.
-        connector = OpenStackConnector(self.provider_config)
-        network_creator = OpenStackNetworkCreator(connector)
-        subnet_creator = OpenStackSubnetCreator(connector)
-        router_creator = OpenStackRouterCreator(connector)
-        floating_ip_creator = OpenStackFloatingIpCreator(connector)
-        keypair_creator = OpenStackKeypairCreator(connector)
-        server_creator = OpenStackServerCreator(connector)
-        server_killer = OpenStackServerKiller(connector)
-        if self.provider_config['networking']['neutron_supported_region']:
-            sg_creator = OpenStackNeutronSecurityGroupCreator(connector)
-        else:
-            sg_creator = OpenStackNovaSecurityGroupCreator(connector)
-        provisioner = CosmoOnOpenStackProvisioner(
-            self.provider_config, network_creator, subnet_creator,
-            router_creator, sg_creator, floating_ip_creator, keypair_creator,
-            server_creator, server_killer)
-        params = provisioner._create_topology()
-        if params is not None:
-            mgmt_ip, private_ip, ssh_key, ssh_user = params
-            if mgmt_ip is not None:
-                r = provisioner._copy_files(mgmt_ip)
-            if r is not None:
-                return params
-        return None
+    def provision(self):
+        set_global_verbosity_level(self.is_verbose_output)
+        driver = self._get_driver()
+        mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
+            driver.create_topology()
+        print provider_context
+        return mgmt_ip, private_ip, ssh_key, ssh_user, provider_context
 
-    def validate(self):
-        """
-        validates provider specific resources and configuration.
-        This can, for instance, include quota validations, config file
-        validations, access validations, etc...
-        This should either retriesurn True if the validations were successful,
-        or False, if they weren't.
-        """
-        _set_global_verbosity_level(self.is_verbose_output)
-
+    def validate(self, schema=PROVIDER_SCHEMA):
+        set_global_verbosity_level(self.is_verbose_output)
         global validated
         validated = True
-        verifier = OpenStackValidator()
+        verifier = OpenStackConfigFileValidator()
 
-        self._validate_config_schema(PROVIDER_SCHEMA)
-        lgr.debug('validating provider cidrs in config file...')
-        verifier._validate_cidr('networking.subnet.cidr',
-                                self.provider_config['networking']
-                                ['subnet']['cidr'])
-        verifier._validate_cidr('networking.management_security_group.cidr',
-                                self.provider_config['networking']
-                                ['management_security_group']['cidr'])
+        self.validate_config_schema(PROVIDER_SCHEMA)
+        verifier.validate_cidr('networking.subnet.cidr',
+                               self.provider_config['networking']
+                               ['subnet']['cidr'])
+        verifier.validate_cidr('networking.management_security_group.cidr',
+                               self.provider_config['networking']
+                               ['management_security_group']['cidr'])
 
         if validated:
             return True
         else:
             return False
 
-    def teardown(self, management_ip):
-        """
-        tears down whatever was provisioned in provision().
-        must return True on successful teardown, and False otherwise.
-        """
-        _set_global_verbosity_level(self.is_verbose_output)
-        lgr.info('NOTE: currently only instance teardown is implemented!')
+    def teardown(self, provider_context, ignore_validation=False):
+        set_global_verbosity_level(self.is_verbose_output)
+        driver = self._get_driver(provider_context)
+        driver.delete_topology(ignore_validation)
 
+    def _get_driver(self, provider_context=None):
+        set_global_verbosity_level(self.is_verbose_output)
+        # provider_config = _read_config(config_path)
+        provider_context = provider_context if provider_context else {}
         connector = OpenStackConnector(self.provider_config)
-        # network_killer = OpenStackNetworkKiller(connector)
-        # subnet_killer = OpenStackSubnetKiller(connector)
-        # router_killer = OpenStackRouterKiller(connector)
-        # floating_ip_killer = OpenStackFloatingIpKiller(connector)
-        # keypair_killer = OpenStackKeypairKiller(connector)
-        server_killer = OpenStackServerKiller(connector)
-        # if provider_config['networking']['neutron_supported_region']:
-        #     sg_killer = OpenStackNeutronSecurityGroupKiller(connector)
-        # else:
-        #     sg_killer = OpenStackNovaSecurityGroupKiller(connector)
-        killer = CosmoOnOpenStackKiller(
-            self.provider_config, management_ip, server_killer)
-        killer._kill_topology()
-        return True
+        network_controller = OpenStackNetworkController(connector)
+        subnet_controller = OpenStackSubnetController(connector)
+        router_controller = OpenStackRouterController(connector)
+        floating_ip_controller = OpenStackFloatingIpController(connector)
+        keypair_controller = OpenStackKeypairController(connector)
+        server_controller = OpenStackServerController(connector)
+        if self.provider_config['networking']['neutron_supported_region']:
+            sg_controller = OpenStackNeutronSecurityGroupController(connector)
+        else:
+            sg_controller = OpenStackNovaSecurityGroupController(connector)
+        driver = CosmoOnOpenStackDriver(
+            self.provider_config, provider_context, network_controller,
+            subnet_controller, router_controller, sg_controller,
+            floating_ip_controller, keypair_controller, server_controller)
+        return driver
 
 
-class OpenStackValidator:
+def _format_resource_name(res_type, res_id, res_name=None):
+    if res_name:
+        return "{0} - {1} - {2}".format(res_type, res_id, res_name)
+    else:
+        return "{0} - {1}".format(res_type, res_id)
 
-    def _validate_cidr(self, field, cidr):
+
+class OpenStackConfigFileValidator:
+
+    def validate_cidr(self, field, cidr):
         global validated
         try:
             IP(cidr)
@@ -176,351 +137,403 @@ class OpenStackValidator:
                       ' {0}. {1}'.format(field, e.message))
 
 
-class CosmoOnOpenStackProvisioner(object):
+class CosmoOnOpenStackDriver(object):
     """ Bootstraps Cosmo on OpenStack """
 
-    def __init__(self, provider_config, network_creator, subnet_creator,
-                 router_creator, sg_creator, floating_ip_creator,
-                 keypair_creator, server_creator, server_killer):
-        self.provider_config = provider_config
-        self.network_creator = network_creator
-        self.subnet_creator = subnet_creator
-        self.router_creator = router_creator
-        self.sg_creator = sg_creator
-        self.floating_ip_creator = floating_ip_creator
-        self.keypair_creator = keypair_creator
-        self.server_creator = server_creator
-        self.server_killer = server_killer
+    def __init__(self, provider_config, provider_context, network_controller,
+                 subnet_controller, router_controller, sg_controller,
+                 floating_ip_controller, keypair_controller,
+                 server_controller):
+        self.config = provider_config
+        self.provider_context = provider_context
+        self.network_controller = network_controller
+        self.subnet_controller = subnet_controller
+        self.router_controller = router_controller
+        self.sg_controller = sg_controller
+        self.floating_ip_controller = floating_ip_controller
+        self.keypair_controller = keypair_controller
+        self.server_controller = server_controller
 
         global verbose_output
         self.verbose_output = verbose_output
 
-    def _create_topology(self):
-        compute_config = self.provider_config['compute']
+    def bootstrap(self, bootstrap_using_script, keep_up, dev_mode):
+
+        installed = None
+        mgmt_ip, private_ip = self.create_topology()
+
+        if mgmt_ip is not None:
+            installed = self._bootstrap_manager(mgmt_ip,
+                                                private_ip,
+                                                bootstrap_using_script,
+                                                dev_mode)
+
+        if mgmt_ip and installed:
+            return mgmt_ip, self.provider_context
+        else:
+            if keep_up:
+                lgr.info('topology will remain up')
+                sys.exit(1)
+            else:
+                lgr.info('tearing down topology'
+                         ' due to bootstrap failure')
+                self.delete_topology()
+                sys.exit(1)
+
+    def create_topology(self):
+        resources = {}
+        self.provider_context['resources'] = resources
+
+        compute_config = self.config['compute']
         insconf = compute_config['management_server']['instance']
 
         is_neutron_supported_region = \
-            self.provider_config['networking']['neutron_supported_region']
+            self.config['networking']['neutron_supported_region']
         if is_neutron_supported_region:
-            nconf = self.provider_config['networking']['int_network']
-            try:
-                net_id = self.network_creator.create_or_ensure_exists(
+            nconf = self.config['networking']['int_network']
+            net_id = self.network_controller\
+                .create_or_ensure_exists_log_resources(
                     nconf,
                     nconf['name'],
+                    resources,
+                    'int_network',
                     False)
-            except Exception as exception:
-                lgr.error('failed to create internal network ({0})'.format(
-                    exception))
-                return None
 
-            sconf = self.provider_config['networking']['subnet']
-            try:
-                subnet_id = self.subnet_creator.create_or_ensure_exists(
+            sconf = self.config['networking']['subnet']
+            subnet_id = self.subnet_controller.\
+                create_or_ensure_exists_log_resources(
                     sconf,
                     sconf['name'],
+                    resources,
+                    'subnet',
                     False,
                     sconf['ip_version'],
                     sconf['cidr'],
                     sconf['dns_nameservers'],
                     net_id)
-            except Exception as exception:
-                lgr.error('failed to create subnet ({0})'.format(
-                    exception))
-                return None
 
-            enconf = self.provider_config['networking']['ext_network']
-            try:
-                enet_id = self.network_creator.create_or_ensure_exists(
+            enconf = self.config['networking']['ext_network']
+            enet_id = self.network_controller.\
+                create_or_ensure_exists_log_resources(
                     enconf,
                     enconf['name'],
+                    resources,
+                    'ext_network',
                     False,
                     ext=True)
-            except Exception as exception:
-                lgr.error('failed to create external network ({0})'.format(
-                    exception))
-                return None
 
-            rconf = self.provider_config['networking']['router']
-            try:
-                self.router_creator.create_or_ensure_exists(
+            rconf = self.config['networking']['router']
+            self.router_controller.\
+                create_or_ensure_exists_log_resources(
                     rconf,
                     rconf['name'],
+                    resources,
+                    'router',
                     False,
                     interfaces=[{'subnet_id': subnet_id}],
                     external_gateway_info={"network_id": enet_id})
-            except Exception as exception:
-                lgr.error('failed to create router ({0})'.format(
-                    exception))
-                return None
 
             insconf['nics'] = [{'net-id': net_id}]
+
         # Security group for Cosmo created instances
-        asgconf = self.provider_config['networking']['agents_security_group']
-        try:
-            asg_id, agent_sg_created = self.sg_creator.create_or_ensure_exists(
+        asgconf = self.config['networking']['agents_security_group']
+        asg_id, agent_sg_created = self.sg_controller.\
+            create_or_ensure_exists_log_resources(
                 asgconf,
                 asgconf['name'],
+                resources,
+                'agents_security_group',
                 True,
                 'Cosmo created machines',
                 [])
-        except Exception as exception:
-            lgr.error('failed to create agents security group ({0})'.format(
-                exception))
-            return None
+
         # Security group for Cosmo manager, allows created
         # instances -> manager communication
-        try:
-            msgconf = self.provider_config['networking']['management_security_group']  # NOQA
-            sg_rules = \
-                [{'port': p, 'group_id': asg_id}
-                    for p in INTERNAL_MGMT_PORTS] + \
-                [{'port': p, 'cidr': msgconf['cidr']}
-                    for p in EXTERNAL_MGMT_PORTS]
-            msg_id = self.sg_creator.create_or_ensure_exists(
-                msgconf,
-                msgconf['name'],
-                False,
-                'Cosmo Manager',
-                sg_rules)
-        except Exception as exception:
-            lgr.error('failed to create mgmt security group ({0})'.format(
-                exception))
-            return None
+        msgconf = self.config['networking']['management_security_group']
+        sg_rules = \
+            [{'port': p, 'group_id': asg_id} for p in INTERNAL_MGMT_PORTS] + \
+            [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_MGMT_PORTS]
+        msg_id = self.sg_controller.create_or_ensure_exists_log_resources(
+            msgconf,
+            msgconf['name'],
+            resources,
+            'management_security_group',
+            False,
+            'Cosmo Manager',
+            sg_rules)
 
         # Add rules to agent security group. (Happens here because we need
         # the management security group id)
         if agent_sg_created:
-            try:
-                self.sg_creator.add_rules(asg_id,
-                                          [{'port': port, 'group_id': msg_id}
-                                           for port in INTERNAL_AGENT_PORTS])
-            except Exception as exception:
-                lgr.error('failed to add agent sg rules ({0})'.format(
-                    exception))
-                return None
+            self.sg_controller.add_rules(asg_id,
+                                         [{'port': port, 'group_id': msg_id}
+                                          for port in INTERNAL_AGENT_PORTS])
 
         # Keypairs setup
-        try:
-            mgr_kpconf = compute_config['management_server']['management_keypair']  # NOQA
-            self.keypair_creator.create_or_ensure_exists(
-                mgr_kpconf,
-                mgr_kpconf['name'],
-                False,
-                private_key_target_path=
-                mgr_kpconf['auto_generated']['private_key_target_path'] if
-                'auto_generated' in mgr_kpconf else None,
-                public_key_filepath=
-                mgr_kpconf['provided']['public_key_filepath'] if
-                'provided' in mgr_kpconf else None
-            )
-        except Exception as exception:
-            lgr.error('failed to create mgmt keypair ({0})'.format(
-                exception))
-            return None
+        mgr_kpconf = compute_config['management_server']['management_keypair']
+        self.keypair_controller.create_or_ensure_exists_log_resources(
+            mgr_kpconf,
+            mgr_kpconf['name'],
+            resources,
+            'management_keypair',
+            False,
+            private_key_target_path=mgr_kpconf['auto_generated']
+                                              ['private_key_target_path'] if
+            'auto_generated' in mgr_kpconf else None,
+            public_key_filepath=mgr_kpconf['provided']
+                                          ['public_key_filepath'] if
+            'provided' in mgr_kpconf else None
+        )
 
-        try:
-            agents_kpconf = compute_config['agent_servers']['agents_keypair']
-            self.keypair_creator.create_or_ensure_exists(
-                agents_kpconf,
-                agents_kpconf['name'],
-                False,
-                private_key_target_path=agents_kpconf['auto_generated']
-                ['private_key_target_path'] if 'auto_generated' in
-                                               agents_kpconf else None,
-                public_key_filepath=
-                agents_kpconf['provided']['public_key_filepath'] if
-                'provided' in agents_kpconf else None
-            )
-        except Exception as exception:
-            lgr.error('failed to create agents keypair ({0})'.format(
-                exception))
-            return None
+        agents_kpconf = compute_config['agent_servers']['agents_keypair']
+        self.keypair_controller.create_or_ensure_exists_log_resources(
+            agents_kpconf,
+            agents_kpconf['name'],
+            resources,
+            'agents_keypair',
+            False,
+            private_key_target_path=agents_kpconf['auto_generated']
+            ['private_key_target_path'] if 'auto_generated' in
+                                           agents_kpconf else None,
+            public_key_filepath=agents_kpconf['provided']
+                                             ['public_key_filepath'] if
+            'provided' in agents_kpconf else None
+        )
 
-        try:
-            server_id = self.server_creator.create_or_ensure_exists(
+        server_id = self.server_controller.\
+            create_or_ensure_exists_log_resources(
                 insconf,
                 insconf['name'],
+                resources,
+                'management_server',
                 False,
                 {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
                 mgr_kpconf['name'],
                 msg_id if is_neutron_supported_region else msgconf['name']
             )
-        except Exception as exception:
-            lgr.error('failed to create mgmt server ({0})'.format(
-                exception))
-            return None
+
         if is_neutron_supported_region:
             network_name = nconf['name']
             if not insconf[EP_FLAG]:  # new server
                 self._attach_floating_ip(
-                    compute_config['management_server'],
-                    enet_id, server_id)
+                    compute_config['management_server'], enet_id, server_id,
+                    resources)
             else:  # existing server
-                ips = self.server_creator.get_server_ips_in_network(
+                ips = self.server_controller.get_server_ips_in_network(
                     server_id, nconf['name'])
                 if len(ips) < 2:
                     self._attach_floating_ip(
                         compute_config['management_server'], enet_id,
-                        server_id)
+                        server_id, resources)
         else:
             network_name = 'private'
 
-        ips = self.server_creator.get_server_ips_in_network(server_id,
-                                                            network_name)
+        ips = self.server_controller.get_server_ips_in_network(server_id,
+                                                               network_name)
         private_ip, public_ip = ips[:2]
-
         ssh_key = mgr_kpconf['auto_generated']['private_key_target_path'] \
             if 'auto_generated' in mgr_kpconf else None
         ssh_user = compute_config['management_server']['user_on_management']
+        return public_ip, private_ip, ssh_key, ssh_user, self.provider_context
 
-        # if ips is not None:
-        return public_ip, private_ip, ssh_key, ssh_user
+    def _check_and_handle_delete_conflicts(self, resources):
+        all_conflicts = {}
 
-    def _copy_files(self, mgmt_ip):
+        def check_for_conflicts(resource_name, controller, **kwargs):
+            resource_data = resources[resource_name]
+            conflicts = {}
+            if resource_data['created']:
+                conflicts = controller.check_for_delete_conflicts(
+                    resource_data['id'], **kwargs)
+            all_conflicts[resource_name] = set(conflicts)
 
-        compute_config = self.provider_config['compute']
-        management_server_config = compute_config['management_server']
+        def get_known_resource_id(resource_name):
+            return resources[resource_name]['id']
 
-        lgr.debug('creating ssh channel to machine...')
-        try:
-            ssh = self._create_ssh_channel_with_mgmt(
-                mgmt_ip,
-                self._get_private_key_path_from_keypair_config(
-                    management_server_config['management_keypair']),
-                management_server_config['user_on_management'])
+        check_for_conflicts('floating_ip', self.floating_ip_controller)
+        check_for_conflicts('management_server', self.server_controller)
+        check_for_conflicts('agents_keypair', self.keypair_controller)
+        check_for_conflicts('management_keypair', self.keypair_controller)
+
+        known_server_id = get_known_resource_id('management_server')
+        check_for_conflicts('management_security_group', self.sg_controller,
+                            servers_for_deletion={known_server_id})
+        check_for_conflicts('agents_security_group', self.sg_controller,
+                            servers_for_deletion={known_server_id})
+
+        known_floating_ip_id = get_known_resource_id('floating_ip')
+        check_for_conflicts('router', self.router_controller,
+                            floating_ips_for_deletion={known_floating_ip_id})
+
+        # Skipping ext_network - currently not automatically created/deleted.
+
+        known_router_id = get_known_resource_id('router')
+        check_for_conflicts('subnet', self.subnet_controller,
+                            servers_for_deletion={known_server_id},
+                            routers_for_deletion={known_router_id})
+
+        known_subnet_id = get_known_resource_id('subnet')
+        check_for_conflicts('int_network', self.network_controller,
+                            subnets_for_deletion={known_subnet_id})
+
+        self._propagate_conflicts_on_known_resources(resources, all_conflicts)
+
+        def format_conflict_print(conflicted_resource_name,
+                                  conflicts):
+            return '\t{0}:\n'\
+                   '\t\t{1}'.format(
+                       _format_resource_name(
+                           resources[conflicted_resource_name]['name'] if
+                           'name' in resources[conflicted_resource_name] else
+                           resources[conflicted_resource_name]['ip'],
+                           resources[conflicted_resource_name]['type'],
+                           resources[conflicted_resource_name]['id']),
+                       '\t\t'.join(['{0}\n'.format(
+                           _format_resource_name(conflict_type,
+                                                 conflict_id)) for
+                                    conflict_type, conflict_id in conflicts]))
+
+        formatted_conflict_lines_str = ''.join(
+            [format_conflict_print(conflicted_resource_name, conflicts)
+             for conflicted_resource_name, conflicts in all_conflicts
+                .iteritems() if
+                len(all_conflicts[conflicted_resource_name]) > 0])
+        if len(formatted_conflict_lines_str) > 0:
+            lgr.info('Conflicts detected:\n'
+                     '{0}'.format(formatted_conflict_lines_str))
             return True
-        except:
-            lgr.error('ssh channel creation failed. '
-                      'your private and public keys might not be matching or '
-                      'your security group might not be configured to allow '
-                      'connections to port {0}.'.format(SSH_CONNECT_PORT))
-            return False
+        return False
 
-        try:
-            self._copy_files_to_manager(
-                ssh,
-                management_server_config['userhome_on_management'],
-                self.provider_config['keystone'],
-                self._get_private_key_path_from_keypair_config(
-                    compute_config['agent_servers']['agents_keypair']),
-                self.provider_config['networking'])
-        except:
-            lgr.error('failed to copy keystone files')
-            return False
+    def _propagate_conflicts_on_known_resources(self, resources,
+                                                all_conflicts):
+        # Propagate conflicts to make sure the conflicts output includes
+        # all resources which can't be taken down - in this case, due to
+        # their dependency on other resources which are known but have
+        # conflicts themselves.
+        # Note that the propagation here is parallel to the
+        # 'known_<resource>' usage when checking for conflicts, and the
+        # order of the propagation is the same as the order for checking
+        # conflicts.
+        if resources['management_security_group']['created']:
+            all_conflicts['management_security_group'].update(
+                all_conflicts['management_server'])
+        if resources['agents_security_group']['created']:
+            all_conflicts['agents_security_group'].update(
+                all_conflicts['management_server'])
+        if resources['subnet']['created']:
+            all_conflicts['subnet'].update(
+                all_conflicts['management_server'])
 
-    def _create_ssh_channel_with_mgmt(self, mgmt_ip, management_key_path,
-                                      user_on_management):
-        ssh = paramiko.SSHClient()
-        # TODO: support fingerprint in config json
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if resources['router']['created']:
+            all_conflicts['router'].update(all_conflicts['floating_ip'])
 
-        #trying to ssh connect to management server. Using retries since it
-        #might take some time to find routes to host
-        for retry in range(0, SSH_CONNECT_RETRIES):
-            try:
-                ssh.connect(mgmt_ip, username=user_on_management,
-                            key_filename=management_key_path,
-                            look_for_keys=False, timeout=10)
-                lgr.debug('ssh connection successful')
-                return ssh
-            except socket.error as err:
-                lgr.debug(
-                    "SSH connection to {0} failed ({1}). Waiting {2} seconds "
-                    "before retrying".format(mgmt_ip, err, 5))
-                time.sleep(5)
-        lgr.error('Failed to ssh connect to management server ({0}'
-                  .format(err))
+        if resources['subnet']['created']:
+            all_conflicts['subnet'].update(all_conflicts['router'])
 
-    def _attach_floating_ip(self, mgmt_server_conf, enet_id, server_id):
+        if resources['int_network']['created']:
+            all_conflicts['int_network'].update(all_conflicts['subnet'])
+
+    def _delete_resources(self, resources):
+        deleted_resources = []
+        not_found_resources = []
+        failed_to_delete_resources = []
+
+        def del_resource(resource_name, controller):
+            resource_data = resources[resource_name]
+            if resource_data['created']:
+                result = controller.delete_resource(resource_data['id'])
+                if result is None:
+                    failed_to_delete_resources.append(resource_data)
+                else:
+                    if result:
+                        deleted_resources.append(resource_data)
+                    else:
+                        not_found_resources.append(resource_data)
+                    del(resources[resource_name])
+
+        # deleting in reversed order to creation order
+        del_resource('floating_ip', self.floating_ip_controller)
+        del_resource('management_server', self.server_controller)
+        del_resource('agents_keypair', self.keypair_controller)
+        del_resource('management_keypair', self.keypair_controller)
+        del_resource('management_security_group', self.sg_controller)
+        del_resource('agents_security_group', self.sg_controller)
+        del_resource('router', self.router_controller)
+        # Skipping ext_network - currently not automatically created/deleted.
+        del_resource('subnet', self.subnet_controller)
+        del_resource('int_network', self.network_controller)
+
+        return (deleted_resources, not_found_resources,
+                failed_to_delete_resources)
+
+    def delete_topology(self, ignore_validation=False):
+        resources = self.provider_context['resources']
+
+        has_conflicts = self._check_and_handle_delete_conflicts(resources)
+        if has_conflicts and not ignore_validation:
+            lgr.info('Not going forward with teardown due to '
+                     'validation conflicts.')
+            return
+
+        deleted_resources, not_found_resources, failed_to_delete_resources =\
+            self._delete_resources(resources)
+
+        def format_resources_data_for_print(resources_data):
+            return '\t'.join(['{0}\n'.format(
+                _format_resource_name(
+                    resource_data['name'] if 'name' in resource_data else
+                    resource_data['ip'],
+                    resource_data['type'],
+                    resource_data['id'])) for resource_data in resources_data])
+
+        deleted_resources_print = \
+            'Successfully deleted the following resources:\n\t{0}\n' \
+            .format(format_resources_data_for_print(deleted_resources))
+        not_found_resources_print = \
+            "The following resources weren't found:\n\t{0}\n" \
+            .format(format_resources_data_for_print(not_found_resources))
+        failed_to_delete_resources_print = \
+            'Failed to delete the following resources:\n\t{0}' \
+            .format(format_resources_data_for_print(
+                failed_to_delete_resources))
+
+        lgr.info(
+            'Finished deleting topology;\n'
+            '{0}{1}{2}'
+            .format(
+                deleted_resources_print if deleted_resources else '',
+                not_found_resources_print if not_found_resources else '',
+                failed_to_delete_resources_print if
+                failed_to_delete_resources else ''))
+
+    def _attach_floating_ip(self, mgmt_server_conf, enet_id, server_id,
+                            resources):
         if 'floating_ip' in mgmt_server_conf:
             floating_ip = mgmt_server_conf['floating_ip']
+            floating_ip_id = None
         else:
-            floating_ip = self.floating_ip_creator.allocate_ip(enet_id)
+            floating_ip_obj = self.floating_ip_controller.allocate_ip(enet_id)
+            floating_ip = floating_ip_obj['floatingip']['floating_ip_address']
+            floating_ip_id = floating_ip_obj['floatingip']['id']
+
+        resources['floating_ip'] = {
+            'id': str(floating_ip_id),
+            'ip': str(floating_ip),
+            'type': 'floating ip',
+            'created': 'floating_ip' not in mgmt_server_conf
+        }
 
         lgr.info('attaching IP {0} to the instance'.format(
             floating_ip))
-        self.server_creator.add_floating_ip(server_id, floating_ip)
+        self.server_controller.add_floating_ip(server_id, floating_ip)
         return floating_ip
-
-    def _get_private_key_path_from_keypair_config(self, keypair_config):
-        path = keypair_config['provided']['private_key_filepath'] if \
-            'provided' in keypair_config else \
-            keypair_config['auto_generated']['private_key_target_path']
-        return expanduser(path)
-
-    def _copy_files_to_manager(self, ssh, userhome_on_management,
-                               keystone_config, agents_key_path,
-                               networking):
-        lgr.info('uploading keystone and neutron files to manager')
-        scp = SCPClient(ssh.get_transport())
-
-        tempdir = tempfile.mkdtemp()
-        try:
-            scp.put(agents_key_path, userhome_on_management + '/.ssh',
-                    preserve_times=True)
-            keystone_file_path = self._make_keystone_file(tempdir,
-                                                          keystone_config)
-            scp.put(keystone_file_path, userhome_on_management,
-                    preserve_times=True)
-            if networking['neutron_supported_region']:
-                neutron_file_path = self._make_neutron_file(tempdir,
-                                                            networking)
-                scp.put(neutron_file_path, userhome_on_management,
-                        preserve_times=True)
-        finally:
-            shutil.rmtree(tempdir)
-
-    def _make_keystone_file(self, tempdir, keystone_config):
-        # put default region in keystone_config file
-        keystone_config['region'] = self.provider_config['compute']['region']
-        keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
-        with open(keystone_file_path, 'w') as f:
-            json.dump(keystone_config, f)
-        return keystone_file_path
-
-    def _make_neutron_file(self, tempdir, networking):
-        neutron_file_path = os.path.join(tempdir, 'neutron_config.json')
-        with open(neutron_file_path, 'w') as f:
-            json.dump({'url': networking['neutron_url']}, f)
-        return neutron_file_path
-
-    def _exec_install_command_on_manager(self, ssh, install_command):
-        command = 'DEBIAN_FRONTEND=noninteractive sudo -E {0}'.format(
-            install_command)
-        return self._exec_command_on_manager(ssh, command)
-
-    def _exec_command_on_manager(self, ssh, command):
-        lgr.info('EXEC START: {0}'.format(command))
-        chan = ssh.get_transport().open_session()
-        chan.exec_command(command)
-        stdin = chan.makefile('wb', -1)
-        stdout = chan.makefile('rb', -1)
-        stderr = chan.makefile_stderr('rb', -1)
-
-        try:
-            exit_code = chan.recv_exit_status()
-            if exit_code != 0:
-                errors = stderr.readlines()
-                raise RuntimeError('Error occurred when trying to run a '
-                                   'command on the management machine. '
-                                   'command was: {0} ; Error(s): {1}'
-                                   .format(command, errors))
-
-            response_lines = stdout.readlines()
-            lgr.info('EXEC END: {0}'.format(command))
-            return response_lines
-        finally:
-            stdin.close()
-            stdout.close()
-            stderr.close()
-            chan.close()
 
 
 class OpenStackLogicError(RuntimeError):
     pass
 
 
-class CreateOrEnsureExists(object):
+class BaseController(object):
 
     def _create(self, name, *args, **kw):
         lgr.debug("Will create {0} '{1}'".format(
@@ -539,8 +552,91 @@ class CreateOrEnsureExists(object):
                 self.__class__.WHAT, name))
             return False
 
-    def create_or_ensure_exists(self, provider_config, name, return_created,
-                                *args, **kw):
+    def create_or_ensure_exists_log_resources(self, provider_config, name,
+                                              resources, resource_name,
+                                              return_created, *args,
+                                              **kwargs):
+        id, created = self._create_or_ensure_exists(provider_config, name,
+                                                    *args, **kwargs)
+        resources[resource_name] = {
+            'id': str(id),
+            'type': self.__class__.WHAT,
+            'name': name,
+            'created': created
+        }
+        if return_created:
+            return id, created
+        else:
+            return id
+
+    def delete_resource(self, resource_id, retries=3, sleep=3):
+        # Attempts to delete a resource by id (with retries).
+        # Returns True if resource deleted successfully,
+        # False if resource didn't exist,
+        # None if failed to delete existing resource
+        res_type = self.__class__.WHAT
+        lgr.debug("Attempting to delete resource {0}"
+                  .format(_format_resource_name(res_type, resource_id)))
+        for retry in range(retries):
+            try:
+                self.delete(resource_id)
+            except Exception as e:
+                # Checking if resource doesn't exist
+                if self._is_openstack_404_error(e):
+                    lgr.debug("resource {0} wasn't found".format(resource_id))
+                    return False
+
+                # Different error occurred. Retry or give up.
+                lgr.debug("Error while attempting to delete resource "
+                          "{0} [retry {1} of {2}]: {3}".format(
+                              _format_resource_name(res_type,
+                                                    resource_id),
+                              retry, retries, str(e)))
+                time.sleep(sleep)
+                continue
+
+            try:
+                self._wait_for_resource_to_be_deleted(resource_id)
+                lgr.debug('resource {0} terminated'.format(resource_id))
+                return True
+            except Exception as e:
+                lgr.debug('Error while waiting for resource {0} '
+                          'to terminate: {1}'.format(
+                              _format_resource_name(res_type,
+                                                    resource_id),
+                              str(e)))
+                return None
+        lgr.debug('Failed all retries to delete resource {0}'
+                  .format(_format_resource_name(res_type, resource_id)))
+        return None
+
+    def _wait_for_resource_to_be_deleted(self, resource_id):
+        timeout = 20
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                self.get_by_id(resource_id)
+                lgr.debug('resource {0} is still up'.format(resource_id))
+            except Exception as e:
+                if self._is_openstack_404_error(e):
+                    return
+                raise
+            time.sleep(2)
+        else:
+            raise RuntimeError('resource {0} failed to terminate in time'
+                               .format(resource_id))
+
+    def _is_openstack_404_error(self, e):
+        # It seems like at the moment, exceptions from Neutron for example
+        # are general "NeutronError" exceptions rather than a clean
+        # neutronclient.common.exceptions.NotFound error, which is
+        # why we check for the status code instead.
+        # nova in different regions and neutron may use either status_code
+        # or http_status fields.
+        return hasattr(e, 'status_code') and e.status_code == 404 or \
+            hasattr(e, 'http_status') and e.http_status == 404
+
+    def _create_or_ensure_exists(self, provider_config, name, *args, **kw):
         """
         if resource exists:
             if resource is server:
@@ -564,10 +660,7 @@ class CreateOrEnsureExists(object):
                                           .format(self.__class__.WHAT, name))
             the_id = self._create(name, *args, **kw)
             created = True
-        if return_created:
-            return the_id, created
-        else:
-            return the_id
+        return the_id, created
 
     def ensure_exists(self, name, *args, **kw):
         lgr.debug("Will use existing {0} '{1}'"
@@ -603,19 +696,19 @@ class CreateOrEnsureExists(object):
                                                   self.__class__.WHAT))
 
 
-class CreateOrEnsureExistsNova(CreateOrEnsureExists):
+class BaseControllerNova(BaseController):
     def __init__(self, connector):
-        CreateOrEnsureExists.__init__(self)
+        BaseController.__init__(self)
         self.nova_client = connector.get_nova_client()
 
 
-class CreateOrEnsureExistsNeutron(CreateOrEnsureExists):
+class BaseControllerNeutron(BaseController):
     def __init__(self, connector):
-        CreateOrEnsureExists.__init__(self)
+        BaseController.__init__(self)
         self.neutron_client = connector.get_neutron_client()
 
 
-class OpenStackNetworkCreator(CreateOrEnsureExistsNeutron):
+class OpenStackNetworkController(BaseControllerNeutron):
     WHAT = 'network'
 
     def list_objects_with_name(self, name):
@@ -633,8 +726,37 @@ class OpenStackNetworkCreator(CreateOrEnsureExistsNeutron):
         ret = self.neutron_client.create_network(n)
         return ret['network']['id']
 
+    def get_by_id(self, id):
+        return self.neutron_client.show_network(id)
 
-class OpenStackSubnetCreator(CreateOrEnsureExistsNeutron):
+    def check_for_delete_conflicts(self, network_id, **kwargs):
+        # checking for collisions with unknown subnets
+        # Notes:
+        # 1) No check for unknown servers on the known subnets is made,
+        # as it is expected for those subnets to be go through deletion
+        # before the network does. Same goes for routers and router ports
+        # (also note that it's impossible to connect a network without
+        # subnets can't to a router port).
+        # 2) While it is possible to connect a server 'directly' to a
+        # network (i.e. a subnet-less network), there's no need to check for
+        # server conflicts as such a network can be deleted regardless of
+        # such servers, with no effect on the servers.
+        # 3) On the other hand, while Openstack does allow for network
+        # deletion without deleting its subnets beforehand, this in practice
+        #  also deletes the underlying subnets - and therefore we do have to
+        #  check for subnet conflicts.
+
+        subnets_for_deletion = kwargs.get('subnets_for_deletion', {})
+        subnet_conflicts = [('subnet', subnet) for subnet in self.get_by_id(
+            network_id)['network']['subnets'] if subnet
+            not in subnets_for_deletion]
+        return subnet_conflicts
+
+    def delete(self, network_id):
+        self.neutron_client.delete_network(network_id)
+
+
+class OpenStackSubnetController(BaseControllerNeutron):
     WHAT = 'subnet'
 
     def list_objects_with_name(self, name):
@@ -652,10 +774,51 @@ class OpenStackSubnetCreator(CreateOrEnsureExistsNeutron):
         })
         return ret['subnet']['id']
 
+    def get_by_id(self, id):
+        return self.neutron_client.show_subnet(id)
 
-class OpenStackFloatingIpCreator():
-    def __init__(self, connector):
-        self.neutron_client = connector.get_neutron_client()
+    def check_for_delete_conflicts(self, subnet_id, **kwargs):
+        # checking for collisions with unknown servers and routers
+        servers_for_deletion = kwargs.get('servers_for_deletion', {})
+        routers_for_deletion = kwargs.get('routers_for_deletion', {})
+
+        router_conflicts = []
+        server_conflicts = []
+        ports = self.neutron_client.list_ports()['ports']
+        for port in ports:
+            # for each port, check if it has an ip on the given subnet,
+            # if it belongs to a server or a router (and not, for example,
+            # a DHCP port), and if that device is up for deletion or not
+            if 'device_owner' in port and \
+                len(port['fixed_ips']) > 0 and \
+                ((port['device_owner'] == 'network:router_interface' and
+                  port['device_id'] not in routers_for_deletion) or
+                 (port['device_owner'].startswith('compute') and
+                  port['device_id'] not in servers_for_deletion)):
+                for fixed_ip in port['fixed_ips']:
+                    # should be only one, but iterating over it anyway.
+                    if 'subnet_id' in fixed_ip and fixed_ip['subnet_id'] == \
+                            subnet_id:
+                        if port['device_owner'] == 'network:router_interface':
+                            router_conflicts.append(('router',
+                                                     port['device_id']))
+                        else:
+                            server_conflicts.append(('server',
+                                                    port['device_id']))
+        return server_conflicts + router_conflicts
+
+    def delete(self, subnet_id):
+        self.neutron_client.delete_subnet(subnet_id)
+
+
+class OpenStackFloatingIpController(BaseControllerNeutron):
+    WHAT = 'floating_ip'
+
+    def list_objects_with_name(self, name):
+        raise RuntimeError('UNSUPPORTED OPERATION')
+
+    def create(self, name):
+        raise RuntimeError('UNSUPPORTED OPERATION')
 
     def allocate_ip(self, external_network_id):
         floating_ip = self.neutron_client.create_floatingip(
@@ -665,10 +828,19 @@ class OpenStackFloatingIpCreator():
                     "floating_network_id": external_network_id,
                 }
             })
-        return floating_ip['floatingip']['floating_ip_address']
+        return floating_ip
+
+    def get_by_id(self, id):
+        return self.neutron_client.show_floatingip(id)
+
+    def check_for_delete_conflicts(self, floating_ip_id, **kwargs):
+        return []
+
+    def delete(self, floating_ip_id):
+        self.neutron_client.delete_floatingip(floating_ip_id)
 
 
-class OpenStackRouterCreator(CreateOrEnsureExistsNeutron):
+class OpenStackRouterController(BaseControllerNeutron):
     WHAT = 'router'
 
     def list_objects_with_name(self, name):
@@ -689,8 +861,32 @@ class OpenStackRouterCreator(CreateOrEnsureExistsNeutron):
                 self.neutron_client.add_interface_router(router_id, i)
         return router_id
 
+    def get_by_id(self, id):
+        return self.neutron_client.show_router(id)
 
-class OpenStackNovaSecurityGroupCreator(CreateOrEnsureExistsNova):
+    def check_for_delete_conflicts(self, router_id, **kwargs):
+        # checking for collisions with unknown floating_ips.
+        floating_ips_for_deletion = kwargs.get('floating_ips_for_deletion', {})
+        floating_ips_conflicts = [('floating_ip', floating_ip['id']) for
+                                  floating_ip in
+                                  self.neutron_client.list_floatingips()[
+                                      'floatingips'] if floating_ip[
+                                      'router_id'] == router_id and
+                                  floating_ip['id'] not in
+                                  floating_ips_for_deletion]
+        return floating_ips_conflicts
+
+    def delete(self, router_id):
+        for port in self.neutron_client.list_ports(
+                device_id=router_id)['ports']:
+            for interface in port['fixed_ips']:
+                # should be only one, but iterating over it anyway.
+                self.neutron_client.remove_interface_router(router_id,
+                                                            interface)
+        self.neutron_client.delete_router(router_id)
+
+
+class OpenStackNovaSecurityGroupController(BaseControllerNova):
     WHAT = 'nova security group'
 
     def list_objects_with_name(self, name):
@@ -710,8 +906,26 @@ class OpenStackNovaSecurityGroupCreator(CreateOrEnsureExistsNova):
             )
         return sg.id
 
+    def get_by_id(self, id):
+        return self.nova_client.security_groups.get(id)
 
-class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
+    def check_for_delete_conflicts(self, sg_id, **kwargs):
+        # checking for collisions with unknown servers
+        servers_for_deletion = kwargs.get('servers_for_deletion', {})
+        servers = self.nova_client.servers.list()
+        server_conflicts = []
+        for server in servers:
+            if server.id not in servers_for_deletion:
+                for sg in server.security_groups:
+                    if sg['id'] == sg_id:
+                        server_conflicts.append(('server', server.id))
+        return server_conflicts
+
+    def delete(self, sg_id):
+        self.nova_client.security_groups.delete(sg_id)
+
+
+class OpenStackNeutronSecurityGroupController(BaseControllerNeutron):
     WHAT = 'neutron security group'
 
     def list_objects_with_name(self, name):
@@ -742,8 +956,32 @@ class OpenStackNeutronSecurityGroupCreator(CreateOrEnsureExistsNeutron):
                 }
             })
 
+    def get_by_id(self, id):
+        return self.neutron_client.show_security_group(id)
 
-class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
+    def check_for_delete_conflicts(self, sg_id, **kwargs):
+        # checking for collisions with unknown servers and routers.
+        # note that there's no 'routers_for_deletion' parameter, as we don't
+        # link between any security group and a router port on bootstrap,
+        # so any linked port is in fact a conflict.
+        servers_for_deletion = kwargs.get('servers_for_deletion', {})
+
+        server_conflicts = []
+        router_conflicts = []
+        for port in self.neutron_client.list_ports()['ports']:
+            if sg_id in port['security_groups']:
+                if port['device_owner'] == 'network:router_interface':
+                    router_conflicts.append(('router', port['device_id']))
+                elif port['device_owner'].startswith('compute') and \
+                        port['device_id'] not in servers_for_deletion:
+                    server_conflicts.append(('server', port['device_id']))
+        return server_conflicts + router_conflicts
+
+    def delete(self, sg_id):
+        self.neutron_client.delete_security_group(sg_id)
+
+
+class OpenStackKeypairController(BaseControllerNova):
     WHAT = 'keypair'
 
     def list_objects_with_name(self, name):
@@ -759,16 +997,29 @@ class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
 
         if public_key_filepath:
             with open(public_key_filepath, 'r') as f:
-                self.nova_client.keypairs.create(key_name, f.read())
+                keypair = self.nova_client.keypairs.create(key_name, f.read())
         else:
-            key = self.nova_client.keypairs.create(key_name)
+            keypair = self.nova_client.keypairs.create(key_name)
             pk_target_path = expanduser(private_key_target_path)
             self._mkdir_p(os.path.dirname(private_key_target_path))
             with open(pk_target_path, 'w') as f:
-                f.write(key.private_key)
+                f.write(keypair.private_key)
                 os.system('chmod 600 {0}'.format(pk_target_path))
+        return keypair.id
 
-    def _mkdir_p(path):
+    def get_by_id(self, id):
+        return self.nova_client.keypairs.get(id)
+
+    def check_for_delete_conflicts(self, keypair_id, **kwargs):
+        # Note: While it might be somewhat weird to delete a keypair which is
+        # currently in use by a server, Openstack does allow this and thus
+        # so do we.
+        return []
+
+    def delete(self, keypair_id):
+        self.nova_client.keypairs.delete(keypair_id)
+
+    def _mkdir_p(self, path):
         try:
             lgr.debug('creating dir {0}'
                       .format(path))
@@ -779,7 +1030,7 @@ class OpenStackKeypairCreator(CreateOrEnsureExistsNova):
             raise
 
 
-class OpenStackServerCreator(CreateOrEnsureExistsNova):
+class OpenStackServerController(BaseControllerNova):
     WHAT = 'server'
 
     def list_objects_with_name(self, name):
@@ -887,58 +1138,14 @@ class OpenStackServerCreator(CreateOrEnsureExistsNova):
 
         return server
 
+    def get_by_id(self, id):
+        return self.nova_client.servers.get(id)
 
-class CosmoOnOpenStackKiller(object):
-    """ Kills Cosmo on OpenStack """
+    def check_for_delete_conflicts(self, server_id, **kwargs):
+        return []
 
-    def __init__(self, provider_config, mgmt_ip, server_killer):
-        self.config = provider_config
-        self.mgmt_ip = mgmt_ip
-        self.server_killer = server_killer
-
-        global verbose_output
-        self.verbose_output = verbose_output
-
-    def _kill_topology(self):
-        lgr.debug('retrieving server object for ip: {0}'.format(self.mgmt_ip))
-        server = self.server_killer.list_objects_by_ip(self.mgmt_ip)
-        if server is not None:
-            self.server_killer.kill(server)
-        else:
-            lgr.info('no servers found for ip: {0}'.format(self.mgmt_ip))
-
-
-class OpenStackServerKiller(CreateOrEnsureExistsNova):
-    WHAT = 'server'
-
-    def list_objects_with_name(self, name):
-        servers = self.nova_client.servers.list(True, {'name': name})
-        return servers
-
-    def list_objects_by_ip(self, ip):
-        servers = self.nova_client.servers.list()
-        for server in servers:
-            if str(ip) in str(server.addresses):
-                return server
-
-    def kill(self, server):
-        lgr.debug('killing server: {0}'.format(server.name))
-        server.delete()
-        self._wait_for_server_to_terminate(server)
-
-    def _wait_for_server_to_terminate(self, server):
-        timeout = 20
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                server = self.nova_client.servers.get(server.id)
-                lgr.debug('server status: ' + server.status)
-            except:
-                lgr.info('server terminated')
-                return
-            time.sleep(2)
-        else:
-            raise RuntimeError('server failed to terminate in time')
+    def delete(self, server_id):
+        self.nova_client.servers.delete(server_id)
 
 
 class OpenStackConnector(object):
