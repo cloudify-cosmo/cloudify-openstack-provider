@@ -280,10 +280,10 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     verifier._validate_schema(provider_config, schema)
 
     lgr.info('validating networking resources...')
-    # if 'neutron_url' in networking_config.keys():
-    #     verifier._validate_url_accessible(
-    #         'networking.network_url',
-    #         networking_config['neutron_url'])
+    if 'neutron_url' in networking_config.keys():
+        verifier._validate_url_accessible(
+             'networking.network_url',
+             networking_config['neutron_url'])
     if 'router' in networking_config.keys():
         verifier._validate_neutron_resource(
             networking_config['router'],
@@ -333,6 +333,7 @@ def _validate_config(provider_config, schema=OPENSTACK_SCHEMA,
     verifier._validate_path_owner(
         agent_keypair_config['auto_generated']['private_key_target_path'])
 
+    # TODO: check cloudify package url accessiblity from within the instance
     # lgr.info('validating cloudify resources...')
     # verifier._validate_url_accessible(
     #     'cloudify.cloudify_components_package_url',
