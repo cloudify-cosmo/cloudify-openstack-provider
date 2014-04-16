@@ -377,8 +377,7 @@ class OpenStackValidator:
     we'll check if the element exists and if it doesn't, check if there's
     quota to create the element, and if there isn't, alert.
     """
-    def __init__(self, provider_config,
-                 nova_client, neutron_client, keystone_client):
+    def __init__(self, nova_client, neutron_client, keystone_client):
         self.nova_client = nova_client
         self.neutron_client = neutron_client
         self.keystone_client = keystone_client
