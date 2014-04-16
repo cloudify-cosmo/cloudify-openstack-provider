@@ -111,6 +111,7 @@ class ProviderManager(BaseProviderClass):
                 lgr.info('provider validations completed successfully')
             else:
                 lgr.error('provider validations failed!')
+                # TODO: raise instead.
                 sys.exit(1)
         driver = self._get_driver()
         mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
@@ -531,29 +532,6 @@ class CosmoOnOpenStackDriver(object):
 
         global verbose_output
         self.verbose_output = verbose_output
-
-    def bootstrap(self, bootstrap_using_script, keep_up, dev_mode):
-
-        installed = None
-        mgmt_ip, private_ip = self.create_topology()
-
-        if mgmt_ip is not None:
-            installed = self._bootstrap_manager(mgmt_ip,
-                                                private_ip,
-                                                bootstrap_using_script,
-                                                dev_mode)
-
-        if mgmt_ip and installed:
-            return mgmt_ip, self.provider_context
-        else:
-            if keep_up:
-                lgr.info('topology will remain up')
-                sys.exit(1)
-            else:
-                lgr.info('tearing down topology'
-                         ' due to bootstrap failure')
-                self.delete_topology()
-                sys.exit(1)
 
     def create_topology(self):
         resources = {}
