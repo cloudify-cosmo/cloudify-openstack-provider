@@ -17,22 +17,30 @@ __author__ = 'ran'
 
 from setuptools import setup
 
-version = '0.3'
+VERSION = '0.3'
+
+COSMO_CLI_VERSION = '0.3'
+COSMO_CLI_BRANCH = 'develop'
+COSMO_CLI = \
+    "https://github.com/cloudify-cosmo/cloudify-cli/tarball/{" \
+    "0}#egg=cloudify-cli-{1}".format(
+        COSMO_CLI_BRANCH, COSMO_CLI_VERSION)
 
 setup(
-    name='cloudify-openstack',
-    version=version,
+    name='cloudify-openstack-provider',
+    version=VERSION,
     author='ran',
     author_email='ran@gigaspaces.com',
     packages=['cloudify_openstack'],
     license='LICENSE',
-    description='the cloudify openstack provider',
+    description='Cloudify OpenStack provider',
     package_data={'cloudify_openstack': ['cloudify-config.yaml',
                                          'cloudify-config.defaults.yaml']},
     install_requires=[
-        "python-novaclient",
-        "python-keystoneclient",
-        "python-neutronclient",
-        "IPy"
-    ]
+        "python-novaclient==2.17.0",
+        "python-keystoneclient==0.7.1",
+        "python-neutronclient==2.3.4",
+        "IPy==0.81"
+    ],
+    dependency_links=[COSMO_CLI]
 )
