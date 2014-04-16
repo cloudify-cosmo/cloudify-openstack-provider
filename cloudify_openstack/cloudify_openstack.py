@@ -25,15 +25,10 @@ import time
 import urllib
 from stat import ST_MODE
 from pwd import getpwnam, getpwuid
-# import json
+import json
 import sys
 from getpass import getuser
 from os.path import expanduser
-
-# from CLI
-from cosmo_cli.cosmo_cli import init_logger
-from cosmo_cli.cosmo_cli import set_global_verbosity_level
-from cosmo_cli.cosmo_cli import BaseProviderClass
 
 # Validator
 from IPy import IP
@@ -44,37 +39,79 @@ import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
 
+# from CLI
+# provides a logger to be used throughout the provider code
+from cosmo_cli.cosmo_cli import init_logger
+# provides a way to set the global verbosity level
+from cosmo_cli.cosmo_cli import set_global_verbosity_level
+# provides 2 base methods to be used.
+# if not imported, must be implemented
+from cosmo_cli.cosmo_cli import BaseProviderClass
+
+# declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
+# declare which ssh key permissions are valid for bootstrap
 VALID_KEY_PERMS = ['600']
 
+# declare which ports should be opened during provisioning
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
-
 INTERNAL_AGENT_PORTS = (22,)
 
+# declare default verbosity state
 verbose_output = False
+# declare validation_errors dict
 validation_errors = {}
-
 
 # initialize logger
 lgr, flgr = init_logger()
 
 
 class ProviderManager(BaseProviderClass):
+    """class for base methods
+    name must be kept as is.
 
+    inherits a basic provider class from the cli containing the following
+     methods:
+    init: initializes a provider in a dir.
+    bootstrap: installs cloudify on the managemente server.
+    validate_config_schema: validates a schema file against the provider
+     configuration file supplied with the provider module.
+
+    ProviderManager classes:
+    __init__: *mandatory*
+    provision: *mandatory*
+    validate: *optional*
+    teardown: *mandatory*
+    """
     def __init__(self, provider_config, is_verbose_output=False):
+        """
+        :param dict provider_config: inherits the config yaml from the cli
+        :param bool is_verbose_output: self explanatory
+        """
         self.provider_config = provider_config
         self.is_verbose_output = is_verbose_output
 
-    def provision(self):
+    def provision(self, skip_validations=False):
+        """
+        provisions resources for the management server
+
+        :param bool skip_validations: flag stating whether validations
+         should be skipped during provisioning
+        :rtype: 'tuple' with the machine's public and private ip's,
+         the ssh key and user configured in the config yaml and
+         the prorivder's context (a dict containing the privisioned
+         resources to be used during teardown)
+        """
         set_global_verbosity_level(self.is_verbose_output)
         lgr.info('validating provider resources and configuration')
         # if the validation_errors dict returns empty
-        if not self.validate():
-            lgr.info('provider validations completed successfully')
-        else:
-            lgr.error('provider validations failed!')
-            sys.exit(1)
+        if not skip_validations:
+            if not self.validate():
+                lgr.info('provider validations completed successfully')
+            else:
+                lgr.error('provider validations failed!')
+                sys.exit(1)
         driver = self._get_driver()
         mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
@@ -84,12 +121,14 @@ class ProviderManager(BaseProviderClass):
     def validate(self, schema=PROVIDER_SCHEMA):
         set_global_verbosity_level(self.is_verbose_output)
         """
-        all validation method names should be self explanatory.
+        validations to be performed before provisioning and bootstrapping
+        the management server.
+
+        :param dict schema: a schema dict to validate the provider config
+         against
+        :rtype: 'dict' representing validation_errors. provisioning will
+         continue only if the dict is empty.
         """
-
-        # global validation_errors
-        # assume validation succeeded
-
         # get openstack clients
         connector = OpenStackConnector(self.provider_config)
         # get verifier object
@@ -212,16 +251,30 @@ class ProviderManager(BaseProviderClass):
         else:
             lgr.error('provider configuration and resources validation '
                       'failed!')
-        # print json.dumps(validation_errors, sort_keys=True,
-        #                  indent=4, separators=(',', ': '))
+        print json.dumps(validation_errors, sort_keys=True,
+                         indent=4, separators=(',', ': '))
         return validation_errors
 
     def teardown(self, provider_context, ignore_validation=False):
+        """
+        tears down the management server and its accompanied provisioned
+        resources
+
+        :param dict provider_context: context information with the previously
+         provisioned resources
+        :param bool ignore_validation: should the teardown process ignore
+         conflicts during teardown
+        :rtype: 'None'
+        """
         set_global_verbosity_level(self.is_verbose_output)
         driver = self._get_driver(provider_context)
         driver.delete_topology(ignore_validation)
 
     def _get_driver(self, provider_context=None):
+        """
+        comfort driver for provisioning and teardown.
+        this is not mandatory
+        """
         set_global_verbosity_level(self.is_verbose_output)
         # provider_config = _read_config(config_path)
         provider_context = provider_context if provider_context else {}
