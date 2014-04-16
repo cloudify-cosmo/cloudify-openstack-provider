@@ -115,7 +115,6 @@ class ProviderManager(BaseProviderClass):
         driver = self._get_driver()
         mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
-        print provider_context
         return mgmt_ip, private_ip, ssh_key, ssh_user, provider_context
 
     def validate(self, schema=PROVIDER_SCHEMA):
