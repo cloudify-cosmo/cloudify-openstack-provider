@@ -25,7 +25,7 @@ import time
 import urllib
 from stat import ST_MODE
 from pwd import getpwnam, getpwuid
-import json
+# import json
 import sys
 from getpass import getuser
 from os.path import expanduser
@@ -212,8 +212,8 @@ class ProviderManager(BaseProviderClass):
         else:
             lgr.error('provider configuration and resources validation '
                       'failed!')
-        print json.dumps(validation_errors, sort_keys=True,
-                         indent=4, separators=(',', ': '))
+        # print json.dumps(validation_errors, sort_keys=True,
+        #                  indent=4, separators=(',', ': '))
         return validation_errors
 
     def teardown(self, provider_context, ignore_validation=False):
