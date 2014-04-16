@@ -24,38 +24,36 @@ PROVIDER_SCHEMA = {
     ],
     "properties":{
         "cloudify": {
-            "type":"object",        
+            "type":"object",
             "required":[
                 'cloudify_branch',
                 'cloudify_components_package_path',
                 'cloudify_components_package_url',
-                'cloudify_package_path',
-                'cloudify_package_url',
-                'cloudify_packages_path'
+                'cloudify_core_package_url',
             ],
             "properties":{
                 "cloudify_branch": {
-                    "type":"string",                
+                    "type":"string",
                 },
                 "cloudify_components_package_path": {
-                    "type":"string",                
+                    "type":"string",
                 },
                 "cloudify_components_package_url": {
-                    "type":"string",                
+                    "type":"string",
                 },
                 "cloudify_package_path": {
-                    "type":"string",                
+                    "type":"string",
                 },
-                "cloudify_package_url": {
-                    "type":"string",                
+                "cloudify_core_package_url": {
+                    "type":"string",
                 },
                 "cloudify_packages_path": {
-                    "type":"string",                
+                    "type":"string",
                 }
             }
         },
         "compute": {
-            "type":"object",        
+            "type":"object",
             "required":[
                 'management_server',
                 'agent_servers',
@@ -63,16 +61,16 @@ PROVIDER_SCHEMA = {
             ],
             "properties":{
                 "agent_servers": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "agents_keypair": {
-                            "type":"object",                                                    
+                            "type":"object",
                             "properties":{
                                 "auto_generated": {
-                                    "type":"object",                                                                    
+                                    "type":"object",
                                     "properties":{
                                         "private_key_target_path": {
-                                            "type":"string",                                                                                    
+                                            "type":"string",
                                         }
                                     }
                                 },
@@ -80,17 +78,17 @@ PROVIDER_SCHEMA = {
                                     "enum": [ True, False ],
                                 },
                                 "name": {
-                                    "type":"string",                                                                    
+                                    "type":"string",
                                 }
                             }
                         }
                     }
                 },
                 "management_server": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "instance": {
-                            "type":"object",                                                    
+                            "type":"object",
                             "properties":{
                                 "externally_provisioned": {
                                     "enum": [ True, False ],
@@ -102,18 +100,18 @@ PROVIDER_SCHEMA = {
                                     "type": ["number", "string"],
                                 },
                                 "name": {
-                                    "type":"string",                                                                    
+                                    "type":"string",
                                 }
                             }
                         },
                         "management_keypair": {
-                            "type":"object",                                                    
+                            "type":"object",
                             "properties":{
                                 "auto_generated": {
-                                    "type":"object",                                                                    
+                                    "type":"object",
                                     "properties":{
                                         "private_key_target_path": {
-                                            "type":"string",                                                                                    
+                                            "type":"string",
                                         }
                                     }
                                 },
@@ -121,78 +119,78 @@ PROVIDER_SCHEMA = {
                                     "enum": [ True, False ],
                                 },
                                 "name": {
-                                    "type":"string",                                                                    
+                                    "type":"string",
                                 }
                             }
                         },
                         "user_on_management": {
-                            "type":"string",                                                    
+                            "type":"string",
                         },
                         "userhome_on_management": {
-                            "type":"string",                                                    
+                            "type":"string",
                         }
                     }
                 },
                 "region": {
-                    "type":"string",                                    
+                    "type":"string",
                 }
             }
         },
         "keystone": {
-            "type":"object",                    
+            "type":"object",
             "properties":{
                 "auth_url": {
-                    "type":"string",                                    
+                    "type":"string",
                 },
                 "password": {
-                    "type":"string",                                    
+                    "type":"string",
                 },
                 "tenant_name": {
-                    "type":"string",                                    
+                    "type":"string",
                 },
                 "username": {
-                    "type":"string",                                    
+                    "type":"string",
                 }
             }
         },
         "networking": {
-            "type":"object",                    
+            "type":"object",
             "properties":{
                 "agents_security_group": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "externally_provisioned": {
                             "enum": [ True, False ],
                         },
                         "name": {
-                            "type":"string",                                                    
+                            "type":"string",
                         }
                     }
                 },
                 "ext_network": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "externally_provisioned": {
                             "enum": [ True, False ],
                         },
                         "name": {
-                            "type":"string",                                                    
+                            "type":"string",
                         }
                     }
                 },
                 "int_network": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "externally_provisioned": {
                             "enum": [ True, False ],
                         },
                         "name": {
-                            "type":"string",                                                    
+                            "type":"string",
                         }
                     }
                 },
                 "management_security_group": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "cidr": {
                             "type":"string",
@@ -201,7 +199,7 @@ PROVIDER_SCHEMA = {
                             "enum": [ True, False ],
                         },
                         "name": {
-                            "type":"string",                                                    
+                            "type":"string",
                         }
                     }
                 },
@@ -209,21 +207,21 @@ PROVIDER_SCHEMA = {
                     "enum": [ True, False ],
                 },
                 "neutron_url": {
-                    "type":"string",                                    
+                    "type":"string",
                 },
                 "router": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "externally_provisioned": {
                             "enum": [ True, False ],
                         },
                         "name": {
-                            "type":"string",                                                    
+                            "type":"string",
                         }
                     }
                 },
                 "subnet": {
-                    "type":"object",                                    
+                    "type":"object",
                     "properties":{
                         "cidr": {
                             "type":"string",
@@ -235,7 +233,7 @@ PROVIDER_SCHEMA = {
                             "enum": [ 4, 6 ],
                         },
                         "name": {
-                            "type":"string",                                                    
+                            "type":"string",
                         },
                         "dns_nameservers": {
                             "type": "array",

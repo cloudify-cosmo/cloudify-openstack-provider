@@ -22,8 +22,12 @@ import errno
 import inspect
 import itertools
 import time
-# import yaml
+import urllib
+from stat import ST_MODE
+from pwd import getpwnam, getpwuid
+import json
 import sys
+from getpass import getuser
 from os.path import expanduser
 
 # from CLI
@@ -40,18 +44,16 @@ import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
 
-
-EP_FLAG = 'use_existing'
+CREATE_IF_MISSING = 'create_if_missing'
+VALID_KEY_PERMS = ['600']
 
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 
 INTERNAL_AGENT_PORTS = (22,)
 
-CONFIG_FILE_NAME = 'cloudify-config.yaml'
-DEFAULTS_CONFIG_FILE_NAME = 'cloudify-config.defaults.yaml'
-
 verbose_output = False
+validation_errors = {}
 
 
 # initialize logger
@@ -67,7 +69,8 @@ class ProviderManager(BaseProviderClass):
     def provision(self):
         set_global_verbosity_level(self.is_verbose_output)
         lgr.info('validating provider resources and configuration')
-        if self.validate():
+        # if the validation_errors dict returns empty
+        if not self.validate():
             lgr.info('provider validations completed successfully')
         else:
             lgr.error('provider validations failed!')
@@ -80,22 +83,138 @@ class ProviderManager(BaseProviderClass):
 
     def validate(self, schema=PROVIDER_SCHEMA):
         set_global_verbosity_level(self.is_verbose_output)
-        global validated
-        validated = True
-        verifier = OpenStackConfigFileValidator()
+        """
+        all validation method names should be self explanatory.
+        """
 
-        self.validate_config_schema(PROVIDER_SCHEMA)
-        verifier.validate_cidr('networking.subnet.cidr',
-                               self.provider_config['networking']
-                               ['subnet']['cidr'])
-        verifier.validate_cidr('networking.management_security_group.cidr',
-                               self.provider_config['networking']
-                               ['management_security_group']['cidr'])
+        # global validation_errors
+        # assume validation succeeded
 
-        if validated:
-            return True
+        # get openstack clients
+        connector = OpenStackConnector(self.provider_config)
+        # get verifier object
+        verifier = OpenStackValidator(connector.get_nova_client(),
+                                      connector.get_neutron_client(),
+                                      connector.get_keystone_client())
+
+        # get config
+        # keystone_config = provider_config['keystone']
+        networking_config = self.provider_config['networking']
+        compute_config = self.provider_config['compute']
+        # cloudify_config = provider_config['cloudify']
+        mgmt_server_config = compute_config['management_server']
+        agent_server_config = compute_config['agent_servers']
+        # mgmt_instance_config = mgmt_server_config['instance']
+        mgmt_keypair_config = mgmt_server_config['management_keypair']
+        agent_keypair_config = agent_server_config['agents_keypair']
+
+        # validates
+        lgr.info('validating provider configuration and resources...')
+
+        lgr.info('validating provider configuration...')
+        verifier.validate_cidr_syntax(
+            'networking.subnet.cidr',
+            networking_config['subnet']['cidr'])
+        verifier.validate_cidr_syntax(
+            'networking.management_security_group.cidr',
+            networking_config['management_security_group']['cidr'])
+        self.validate_config_schema(schema)
+
+        lgr.info('validating networking resources...')
+        if 'neutron_url' in networking_config.keys():
+            verifier.validate_url_accessible(
+                'networking.network_url',
+                networking_config['neutron_url'])
+        if 'router' in networking_config.keys():
+            verifier.validate_neutron_resource(
+                'networking.router.name',
+                networking_config['router'],
+                resource_type='router',
+                method='list_routers')
+        verifier.validate_neutron_resource(
+            'networking.subnet.name',
+            networking_config['subnet'],
+            resource_type='subnet',
+            method='list_subnets')
+        verifier.validate_neutron_resource(
+            'networking.int_network.name',
+            networking_config['int_network'],
+            resource_type='network',
+            method='list_networks')
+        if 'agents_security_group' in networking_config.keys():
+            verifier.validate_neutron_resource(
+                'networking.agents_security_group.name',
+                networking_config['agents_security_group'],
+                resource_type='security_group',
+                method='list_security_groups')
+        verifier.validate_neutron_resource(
+            'networking.management_security_group.name',
+            networking_config['management_security_group'],
+            resource_type='security_group',
+            method='list_security_groups')
+        if 'floating_ip' in mgmt_server_config.keys():
+            verifier.validate_cidr_syntax(
+                'compute.management_server.floating_ip',
+                mgmt_server_config['floating_ip'])
+            verifier.validate_floating_ip(
+                'compute.management_server.floating_ip',
+                mgmt_server_config['floating_ip'])
         else:
-            return False
+            verifier.validate_floating_ip(
+                'compute.management_server.floating_ip',
+                None)
+
+        lgr.info('validating compute resources...')
+        verifier.validate_image_exists(
+            'compute.management_server.instance.image',
+            mgmt_server_config['instance']['image'])
+        verifier.validate_flavor_exists(
+            'compute.management_server.instance.flavor',
+            mgmt_server_config['instance']['flavor'])
+        verifier.validate_key_perms(
+            'compute.management_server.management_keypair'
+            '.auto_generated.private_key_target_path',
+            mgmt_keypair_config['auto_generated']['private_key_target_path'])
+        verifier.validate_key_perms(
+            'compute.agent_servers.agents_keypair'
+            '.auto_generated.private_key_target_path',
+            agent_keypair_config['auto_generated']['private_key_target_path'])
+        verifier.validate_path_owner(
+            'compute.management_server.management_keypair'
+            '.auto_generated.private_key_target_path',
+            mgmt_keypair_config['auto_generated']['private_key_target_path'])
+        verifier.validate_path_owner(
+            'compute.agent_servers.agents_keypair'
+            '.auto_generated.private_key_target_path',
+            agent_keypair_config['auto_generated']['private_key_target_path'])
+
+        # TODO: check cloudify package url accessiblity from
+        # within the instance
+        # lgr.info('validating cloudify resources...')
+        # verifier.validate_url_accessible(
+        #     'cloudify.cloudify_components_package_url',
+        #     cloudify_config['cloudify_components_package_url'])
+        # verifier.validate_url_accessible(
+        #     'cloudify.cloudify_package_url',
+        #     cloudify_config['cloudify_package_url'])
+
+        # TODO:
+        # verifier.validate_security_rules()
+        # undeliverable due to keystone client bug
+        # verifier.validate_keystone_service_exists('nova')
+        # verifier.validate_keystone_service_exists('neutron')
+        # undeliverable due to nova client bug
+        # verifier.validate_instance_quota()
+
+        if not validation_errors:
+            lgr.info('provider configuration and resources validated '
+                     'successfully')
+        else:
+            lgr.error('provider configuration and resources validation '
+                      'failed!')
+        print json.dumps(validation_errors, sort_keys=True,
+                         indent=4, separators=(',', ': '))
+        return validation_errors
 
     def teardown(self, provider_context, ignore_validation=False):
         set_global_verbosity_level(self.is_verbose_output)
@@ -131,16 +250,214 @@ def _format_resource_name(res_type, res_id, res_name=None):
         return "{0} - {1}".format(res_type, res_id)
 
 
-class OpenStackConfigFileValidator:
+class OpenStackValidator:
+    """
+    for every mandatory config element, we'll verify access or existence.
 
-    def validate_cidr(self, field, cidr):
-        global validated
+    for every config element that is marked as create_if_missing = False
+    we'll verify that the element exists and if it doesn't, alert.
+
+    for every config element that is marked as create_if_missing = True
+    we'll check if the element exists and if it doesn't, check if there's
+    quota to create the element, and if there isn't, alert.
+    """
+    def __init__(self, nova_client, neutron_client, keystone_client):
+        self.nova_client = nova_client
+        self.neutron_client = neutron_client
+        self.keystone_client = keystone_client
+
+    def _get_neutron_quota(self, resource):
+        quotas = self.neutron_client.show_quota(
+            self.keystone_client.tenant_id)['quota']
+        return quotas[resource]
+
+    def validate_floating_ip(self, field, floating_ip):
+        lgr.debug('checking whether floating_ip {0} exists...'
+                  .format(floating_ip))
+        ips = self.neutron_client.list_floatingips()
+        ips_amount = len(ips['floatingips'])
+        if floating_ip is not None:
+            found_floating_ip = False
+            for ip in ips['floatingips']:
+                if ip['floating_ip_address'] == floating_ip:
+                    lgr.debug('VALIDATED:'
+                              'floating_ip {0} is allocated'
+                              .format(floating_ip))
+                    found_floating_ip = True
+                    break
+            if not found_floating_ip:
+                err = ('config file validation error originating at key: {0}, '
+                       'floating_ip {1} is not allocated.'
+                       ' please provide an allocated address'
+                       ' or comment the floating_ip line in the config'
+                       ' and one will be allocated for you.'
+                       .format(field, floating_ip))
+                lgr.error('VALIDATION ERROR:' + err)
+                lgr.info('list of available floating ips:')
+                for ip in ips['floatingips']:
+                    lgr.info('    {0}'.format(ip['floating_ip_address']))
+                validation_errors.setdefault('networking', []).append(err)
+        else:
+            lgr.debug('checking whether quota allows allocation'
+                      ' of new floating ips')
+            ips_quota = self._get_neutron_quota('floatingip')
+            if ips_amount < ips_quota:
+                lgr.debug('VALIDATED:'
+                          'a new ip can be allocated.'
+                          ' provisioned ips: {0}, quota: {1}'
+                          .format(ips_amount, ips_quota))
+            else:
+                err = ('config file validation error originating at key: {0}, '
+                       'a floating ip cannot be allocated due'
+                       ' to quota limitations.'
+                       ' privisioned ips: {1}, quota: {2}'
+                       .format(field, ips_amount, ips_quota))
+                lgr.error('VALIDATION ERROR:' + err)
+                validation_errors.setdefault('networking', []).append(err)
+
+    def validate_neutron_resource(self, field, resource_config, resource_type,
+                                  method):
+        lgr.debug('checking whether {0} {1} exists...'
+                  .format(resource_type, resource_config['name']))
+        resource_dict = getattr(self.neutron_client, method)()
+        resource_amount = len(resource_dict)
+        for type, all in resource_dict.iteritems():
+            for resource in all:
+                if resource['name'] == resource_config['name']:
+                    lgr.debug('VALIDATED:'
+                              '{0} {1} found in pool'
+                              .format(resource_type, resource_config['name']))
+                    return
+        if not resource_config[CREATE_IF_MISSING]:
+            err = ('config file validation error originating at key: {0}, '
+                   '{1} {2} does not exist in the pool but is marked as'
+                   ' create_if_missing = False. please provide an existing'
+                   ' resource name or change create_if_missing = True'
+                   ' to automatically create a new resource.'
+                   .format(field, resource_type, resource_config['name']))
+            lgr.error('VALIDATION ERROR:' + err)
+            lgr.info('list of available {0}s:'.format(resource_type))
+            for type, all in resource_dict.iteritems():
+                for resource in all:
+                    lgr.info('    {0}'.format(resource['name']))
+            validation_errors.setdefault('networking', []).append(err)
+        else:
+            resource_quota = self._get_neutron_quota(resource_type)
+            if resource_amount < resource_quota:
+                lgr.debug('VALIDATED:'
+                          '{0} {1} can be created.'
+                          ' privisioned {2}s: {3}, quota: {4}'
+                          .format(resource_type, resource_config['name'],
+                                  resource_type, resource_amount,
+                                  resource_quota))
+            else:
+                err = ('config file validation error originating at key: {0}, '
+                       '{1} {2} cannot be created due'
+                       ' to quota limitations.'
+                       ' privisioned {3}s: {4}, quota: {5}'
+                       .format(field, resource_type, resource_config['name'],
+                               resource_type, resource_amount,
+                               resource_quota))
+                lgr.error('VALIDATION ERROR:' + err)
+                validation_errors.setdefault('networking', []).append(err)
+
+    def validate_cidr_syntax(self, field, cidr):
+        lgr.debug('checking whether {0} is a valid address range...'
+                  .format(cidr))
         try:
             IP(cidr)
+            lgr.debug('VALIDATED:'
+                      '{0} is a valid address range.'.format(cidr))
         except ValueError as e:
-            validated = False
-            lgr.error('config file validation error found at key:'
-                      ' {0}. {1}'.format(field, e.message))
+            err = ('config file validation error originating at key: {0}, '
+                   '{1}'.format(field, e.message))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('networking', []).append(err)
+
+    def validate_image_exists(self, field, image):
+        image = str(image)
+        lgr.debug('checking whether image {0} exists...'.format(image))
+        images = self.nova_client.images.list()
+        for i in images:
+            if image in i.name or image in i.human_id or image in i.id:
+                lgr.debug('VALIDATED:'
+                          'image {0} exists'.format(image))
+                return
+        err = ('config file validation error originating at key: {0}, '
+               'image {1} does not exist'.format(field, image))
+        lgr.error('VALIDATION ERROR:' + err)
+        lgr.info('list of available images:')
+        for i in images:
+            lgr.info('    {0}'.format(i.name))
+        validation_errors.setdefault('compute', []).append(err)
+
+    def validate_flavor_exists(self, field, flavor):
+        flavor = str(flavor)
+        lgr.debug('checking whether flavor {0} exists...'.format(flavor))
+        flavors = self.nova_client.flavors.list()
+        for f in flavors:
+            if flavor in f.name or flavor in f.human_id or flavor in f.id:
+                lgr.debug('VALIDATED:'
+                          'flavor {0} exists'.format(flavor))
+                return
+        err = ('config file validation error originating at key: {0}, '
+               'flavor {1} does not exist'.format(field, flavor))
+        lgr.error('VALIDATION ERROR:' + err)
+        lgr.info('list of available flavors:')
+        for f in flavors:
+            lgr.info('    {0}'.format(f.name))
+        validation_errors.setdefault('compute', []).append(err)
+
+    def validate_key_perms(self, field, key_path):
+        lgr.debug('checking whether key {0} has the right permissions'
+                  .format(key_path))
+        home = os.path.expanduser("~")
+        if key_path.startswith('~'):
+            key_path = key_path.replace('~', home)
+        if not oct(os.stat(key_path)[ST_MODE])[-3:] in VALID_KEY_PERMS:
+            err = ('config file validation error originating at key: {0}, '
+                   'ssh key {1} does not have the correct permissions'
+                   '({2}).'.format(field, key_path, VALID_KEY_PERMS))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('copmute', []).append(err)
+            return
+        lgr.debug('VALIDATED:'
+                  'ssh key {0} has the correct permissions'.format(key_path))
+
+    def validate_url_accessible(self, field, package_url):
+        lgr.debug('checking whether url {0} is accessible'.format(package_url))
+        status = urllib.urlopen(package_url).getcode()
+        if not status == 200:
+            err = ('config file validation error originating at key: {0}, '
+                   'url {1} is not accessible'.format(field, package_url))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('cloudify', []).append(err)
+            return
+        lgr.debug('VALIDATED:'
+                  'url {0} is accessible'.format(package_url))
+
+    def validate_path_owner(self, field, path):
+        lgr.debug('checking whether dir {0} is owned by the current user'
+                  .format(path))
+
+        home = os.path.expanduser("~")
+        if path.startswith('~'):
+            path = path.replace('~', home)
+        user = getuser()
+
+        owner = getpwuid(os.stat(path).st_uid).pw_name
+        current_user_id = str(getpwnam(user).pw_uid)
+        owner_id = str(os.stat(path).st_uid)
+        if not current_user_id == owner_id:
+            err = ('config file validation error originating at key: {0}, '
+                   '{1} is not owned by the current user'
+                   ' (it is owned by {2})'
+                   .format(field, path, owner))
+            lgr.error('VALIDATION ERROR:' + err)
+            validation_errors.setdefault('compute', []).append(err)
+            return
+        lgr.debug('VALIDATED:'
+                  '{0} is owned by the current user'.format(path))
 
 
 class CosmoOnOpenStackDriver(object):
@@ -313,14 +630,14 @@ class CosmoOnOpenStackDriver(object):
                 resources,
                 'management_server',
                 False,
-                {k: v for k, v in insconf.iteritems() if k != EP_FLAG},
+                {k: v for k, v in insconf.iteritems() if k != CREATE_IF_MISSING},  # NOQA
                 mgr_kpconf['name'],
                 msg_id if is_neutron_supported_region else msgconf['name']
             )
 
         if is_neutron_supported_region:
             network_name = nconf['name']
-            if not insconf[EP_FLAG]:  # new server
+            if insconf[CREATE_IF_MISSING]:  # new server
                 self._attach_floating_ip(
                     compute_config['management_server'], enet_id, server_id,
                     resources)
@@ -570,10 +887,14 @@ class BaseController(object):
             'name': name,
             'created': created
         }
+        # TODO:
+        # replace:
         if return_created:
             return id, created
         else:
             return id
+        # with:
+        # return id, created if return_created else id
 
     def delete_resource(self, resource_id, retries=3, sleep=3):
         # Attempts to delete a resource by id (with retries).
@@ -595,8 +916,7 @@ class BaseController(object):
                 # Different error occurred. Retry or give up.
                 lgr.debug("Error while attempting to delete resource "
                           "{0} [retry {1} of {2}]: {3}".format(
-                              _format_resource_name(res_type,
-                                                    resource_id),
+                              _format_resource_name(res_type, resource_id),
                               retry, retries, str(e)))
                 time.sleep(sleep)
                 continue
@@ -608,8 +928,7 @@ class BaseController(object):
             except Exception as e:
                 lgr.debug('Error while waiting for resource {0} '
                           'to terminate: {1}'.format(
-                              _format_resource_name(res_type,
-                                                    resource_id),
+                              _format_resource_name(res_type, resource_id),
                               str(e)))
                 return None
         lgr.debug('Failed all retries to delete resource {0}'
@@ -649,8 +968,8 @@ class BaseController(object):
                 raise already exists
             use resource
         else:
-            if use_existing:
-                raise is configured to use_existing but does not exist
+            if not create_if_missing:
+                raise does not exist
             create resource
         """
         if self._check(name, *args, **kw):
@@ -660,9 +979,11 @@ class BaseController(object):
             the_id = self.ensure_exists(name, *args, **kw)
             created = False
         else:
-            if EP_FLAG in provider_config and provider_config[EP_FLAG]:
-                raise OpenStackLogicError("{0} '{1}' is configured to 'use_"
-                                          "existing' but does not exist"
+            if CREATE_IF_MISSING in provider_config \
+                    and not provider_config[CREATE_IF_MISSING]:
+                raise OpenStackLogicError("{0} '{1}' is not configured to"
+                                          " create_if_missing but but does not"
+                                          " exist."
                                           .format(self.__class__.WHAT, name))
             the_id = self._create(name, *args, **kw)
             created = True
@@ -971,7 +1292,6 @@ class OpenStackNeutronSecurityGroupController(BaseControllerNeutron):
         # link between any security group and a router port on bootstrap,
         # so any linked port is in fact a conflict.
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
-
         server_conflicts = []
         router_conflicts = []
         for port in self.neutron_client.list_ports()['ports']:
@@ -1016,15 +1336,6 @@ class OpenStackKeypairController(BaseControllerNova):
     def get_by_id(self, id):
         return self.nova_client.keypairs.get(id)
 
-    def check_for_delete_conflicts(self, keypair_id, **kwargs):
-        # Note: While it might be somewhat weird to delete a keypair which is
-        # currently in use by a server, Openstack does allow this and thus
-        # so do we.
-        return []
-
-    def delete(self, keypair_id):
-        self.nova_client.keypairs.delete(keypair_id)
-
     def _mkdir_p(self, path):
         try:
             lgr.debug('creating dir {0}'
@@ -1034,6 +1345,15 @@ class OpenStackKeypairController(BaseControllerNova):
             if exc.errno == errno.EEXIST and os.path.isdir(path):
                 return
             raise
+
+    def check_for_delete_conflicts(self, keypair_id, **kwargs):
+        # Note: While it might be somewhat weird to delete a keypair which is
+        # currently in use by a server, Openstack does allow this and thus
+        # so do we.
+        return []
+
+    def delete(self, keypair_id):
+        self.nova_client.keypairs.delete(keypair_id)
 
 
 class OpenStackServerController(BaseControllerNova):
