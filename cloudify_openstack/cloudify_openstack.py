@@ -26,7 +26,7 @@ import urllib
 from stat import ST_MODE
 from pwd import getpwnam, getpwuid
 import json
-import sys
+# import sys
 from getpass import getuser
 from os.path import expanduser
 
@@ -45,7 +45,7 @@ from cosmo_cli.cosmo_cli import init_logger
 # provides a way to set the global verbosity level
 from cosmo_cli.cosmo_cli import set_global_verbosity_level
 # provides 2 base methods to be used.
-# if not imported, must be implemented
+# if not imported, the bootstrap method must be implemented
 from cosmo_cli.cosmo_cli import BaseProviderClass
 
 # declare the create_if_missing flag
@@ -61,7 +61,6 @@ INTERNAL_AGENT_PORTS = (22,)
 # declare default verbosity state
 verbose_output = False
 # declare validation_errors dict
-validation_errors = {}
 
 # initialize logger
 lgr, flgr = init_logger()
@@ -71,9 +70,9 @@ class ProviderManager(BaseProviderClass):
     """class for base methods
     name must be kept as is.
 
-    inherits a basic provider class from the cli containing the following
+    inherits BaseProviderClass from the cli containing the following
      methods:
-    init: initializes a provider in a dir.
+    init: initializes provider config files.
     bootstrap: installs cloudify on the managemente server.
     validate_config_schema: validates a schema file against the provider
      configuration file supplied with the provider module.
@@ -91,8 +90,9 @@ class ProviderManager(BaseProviderClass):
         """
         self.provider_config = provider_config
         self.is_verbose_output = is_verbose_output
+        self.schema = PROVIDER_SCHEMA
 
-    def provision(self, skip_validations=False):
+    def provision(self):
         """
         provisions resources for the management server
 
@@ -104,21 +104,12 @@ class ProviderManager(BaseProviderClass):
          resources to be used during teardown)
         """
         set_global_verbosity_level(self.is_verbose_output)
-        if not skip_validations:
-            lgr.info('validating provider resources and configuration')
-            # if the validation_errors dict returns empty
-            if not self.validate():
-                lgr.info('provider validations completed successfully')
-            else:
-                lgr.error('provider validations failed!')
-                # TODO: raise instead.
-                sys.exit(1)
-        driver = self._get_driver()
+        driver = self._get_driver(self.provider_config)
         mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
         return mgmt_ip, private_ip, ssh_key, ssh_user, provider_context
 
-    def validate(self, schema=PROVIDER_SCHEMA):
+    def validate(self, validation_errors={}):
         set_global_verbosity_level(self.is_verbose_output)
         """
         validations to be performed before provisioning and bootstrapping
@@ -132,7 +123,8 @@ class ProviderManager(BaseProviderClass):
         # get openstack clients
         connector = OpenStackConnector(self.provider_config)
         # get verifier object
-        verifier = OpenStackValidator(connector.get_nova_client(),
+        verifier = OpenStackValidator(validation_errors,
+                                      connector.get_nova_client(),
                                       connector.get_neutron_client(),
                                       connector.get_keystone_client())
 
@@ -150,14 +142,12 @@ class ProviderManager(BaseProviderClass):
         # validates
         lgr.info('validating provider configuration and resources...')
 
-        lgr.info('validating provider configuration...')
         verifier.validate_cidr_syntax(
             'networking.subnet.cidr',
             networking_config['subnet']['cidr'])
         verifier.validate_cidr_syntax(
             'networking.management_security_group.cidr',
             networking_config['management_security_group']['cidr'])
-        self.validate_config_schema(schema)
 
         lgr.info('validating networking resources...')
         if 'neutron_url' in networking_config.keys():
@@ -191,10 +181,10 @@ class ProviderManager(BaseProviderClass):
             networking_config['management_security_group'],
             resource_type='security_group',
             method='list_security_groups')
-        if 'floating_ip' in mgmt_server_config.keys():
-            verifier.validate_cidr_syntax(
-                'compute.management_server.floating_ip',
-                mgmt_server_config['floating_ip'])
+        if 'floating_ip' in mgmt_server_config.keys() \
+                and verifier.validate_cidr_syntax(
+                    'compute.management_server.floating_ip',
+                    mgmt_server_config['floating_ip']):
             verifier.validate_floating_ip(
                 'compute.management_server.floating_ip',
                 mgmt_server_config['floating_ip'])
@@ -267,10 +257,10 @@ class ProviderManager(BaseProviderClass):
         :rtype: 'None'
         """
         set_global_verbosity_level(self.is_verbose_output)
-        driver = self._get_driver(provider_context)
+        driver = self._get_driver(self.provider_config, provider_context)
         driver.delete_topology(ignore_validation)
 
-    def _get_driver(self, provider_context=None):
+    def _get_driver(self, provider_config, provider_context=None):
         """
         comfort driver for provisioning and teardown.
         this is not mandatory
@@ -278,19 +268,19 @@ class ProviderManager(BaseProviderClass):
         set_global_verbosity_level(self.is_verbose_output)
         # provider_config = _read_config(config_path)
         provider_context = provider_context if provider_context else {}
-        connector = OpenStackConnector(self.provider_config)
+        connector = OpenStackConnector(provider_config)
         network_controller = OpenStackNetworkController(connector)
         subnet_controller = OpenStackSubnetController(connector)
         router_controller = OpenStackRouterController(connector)
         floating_ip_controller = OpenStackFloatingIpController(connector)
         keypair_controller = OpenStackKeypairController(connector)
         server_controller = OpenStackServerController(connector)
-        if self.provider_config['networking']['neutron_supported_region']:
+        if provider_config['networking']['neutron_supported_region']:
             sg_controller = OpenStackNeutronSecurityGroupController(connector)
         else:
             sg_controller = OpenStackNovaSecurityGroupController(connector)
         driver = CosmoOnOpenStackDriver(
-            self.provider_config, provider_context, network_controller,
+            provider_config, provider_context, network_controller,
             subnet_controller, router_controller, sg_controller,
             floating_ip_controller, keypair_controller, server_controller)
         return driver
@@ -314,7 +304,9 @@ class OpenStackValidator:
     we'll check if the element exists and if it doesn't, check if there's
     quota to create the element, and if there isn't, alert.
     """
-    def __init__(self, nova_client, neutron_client, keystone_client):
+    def __init__(self, validation_errors, nova_client, neutron_client,
+                 keystone_client):
+        self.validation_errors = validation_errors
         self.nova_client = nova_client
         self.neutron_client = neutron_client
         self.keystone_client = keystone_client
@@ -349,7 +341,7 @@ class OpenStackValidator:
                 lgr.info('list of available floating ips:')
                 for ip in ips['floatingips']:
                     lgr.info('    {0}'.format(ip['floating_ip_address']))
-                validation_errors.setdefault('networking', []).append(err)
+                self.validation_errors.setdefault('networking', []).append(err)
         else:
             lgr.debug('checking whether quota allows allocation'
                       ' of new floating ips')
@@ -366,7 +358,7 @@ class OpenStackValidator:
                        ' privisioned ips: {1}, quota: {2}'
                        .format(field, ips_amount, ips_quota))
                 lgr.error('VALIDATION ERROR:' + err)
-                validation_errors.setdefault('networking', []).append(err)
+                self.validation_errors.setdefault('networking', []).append(err)
 
     def validate_neutron_resource(self, field, resource_config, resource_type,
                                   method):
@@ -393,7 +385,7 @@ class OpenStackValidator:
             for type, all in resource_dict.iteritems():
                 for resource in all:
                     lgr.info('    {0}'.format(resource['name']))
-            validation_errors.setdefault('networking', []).append(err)
+            self.validation_errors.setdefault('networking', []).append(err)
         else:
             resource_quota = self._get_neutron_quota(resource_type)
             if resource_amount < resource_quota:
@@ -412,7 +404,7 @@ class OpenStackValidator:
                                resource_type, resource_amount,
                                resource_quota))
                 lgr.error('VALIDATION ERROR:' + err)
-                validation_errors.setdefault('networking', []).append(err)
+                self.validation_errors.setdefault('networking', []).append(err)
 
     def validate_cidr_syntax(self, field, cidr):
         lgr.debug('checking whether {0} is a valid address range...'
@@ -425,7 +417,7 @@ class OpenStackValidator:
             err = ('config file validation error originating at key: {0}, '
                    '{1}'.format(field, e.message))
             lgr.error('VALIDATION ERROR:' + err)
-            validation_errors.setdefault('networking', []).append(err)
+            self.validation_errors.setdefault('networking', []).append(err)
 
     def validate_image_exists(self, field, image):
         image = str(image)
@@ -442,7 +434,7 @@ class OpenStackValidator:
         lgr.info('list of available images:')
         for i in images:
             lgr.info('    {0}'.format(i.name))
-        validation_errors.setdefault('compute', []).append(err)
+        self.validation_errors.setdefault('compute', []).append(err)
 
     def validate_flavor_exists(self, field, flavor):
         flavor = str(flavor)
@@ -459,7 +451,7 @@ class OpenStackValidator:
         lgr.info('list of available flavors:')
         for f in flavors:
             lgr.info('    {0}'.format(f.name))
-        validation_errors.setdefault('compute', []).append(err)
+        self.validation_errors.setdefault('compute', []).append(err)
 
     def validate_key_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
@@ -472,7 +464,7 @@ class OpenStackValidator:
                    'ssh key {1} does not have the correct permissions'
                    '({2}).'.format(field, key_path, VALID_KEY_PERMS))
             lgr.error('VALIDATION ERROR:' + err)
-            validation_errors.setdefault('copmute', []).append(err)
+            self.validation_errors.setdefault('copmute', []).append(err)
             return
         lgr.debug('VALIDATED:'
                   'ssh key {0} has the correct permissions'.format(key_path))
@@ -484,7 +476,7 @@ class OpenStackValidator:
             err = ('config file validation error originating at key: {0}, '
                    'url {1} is not accessible'.format(field, package_url))
             lgr.error('VALIDATION ERROR:' + err)
-            validation_errors.setdefault('cloudify', []).append(err)
+            self.validation_errors.setdefault('cloudify', []).append(err)
             return
         lgr.debug('VALIDATED:'
                   'url {0} is accessible'.format(package_url))
@@ -507,7 +499,7 @@ class OpenStackValidator:
                    ' (it is owned by {2})'
                    .format(field, path, owner))
             lgr.error('VALIDATION ERROR:' + err)
-            validation_errors.setdefault('compute', []).append(err)
+            self.validation_errors.setdefault('compute', []).append(err)
             return
         lgr.debug('VALIDATED:'
                   '{0} is owned by the current user'.format(path))
@@ -1540,3 +1532,7 @@ class OpenStackConnector(object):
 
     def get_nova_client(self):
         return self.nova_client
+
+
+class ValidationError(Exception):
+    pass
