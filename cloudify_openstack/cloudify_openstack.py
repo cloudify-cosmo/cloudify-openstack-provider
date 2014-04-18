@@ -139,9 +139,7 @@ class ProviderManager(BaseProviderClass):
         mgmt_keypair_config = mgmt_server_config['management_keypair']
         agent_keypair_config = agent_server_config['agents_keypair']
 
-        # validates
-        lgr.info('validating provider configuration and resources...')
-
+        # validate
         verifier.validate_cidr_syntax(
             'networking.subnet.cidr',
             networking_config['subnet']['cidr'])
@@ -235,12 +233,8 @@ class ProviderManager(BaseProviderClass):
         # undeliverable due to nova client bug
         # verifier.validate_instance_quota()
 
-        if not validation_errors:
-            lgr.info('provider configuration and resources validated '
-                     'successfully')
-        else:
-            lgr.error('provider configuration and resources validation '
-                      'failed!')
+        lgr.error('resources validation failed!') if validation_errors \
+            else lgr.info('resources validated successfully')
         print json.dumps(validation_errors, sort_keys=True,
                          indent=4, separators=(',', ': '))
         return validation_errors
@@ -325,7 +319,7 @@ class OpenStackValidator:
             found_floating_ip = False
             for ip in ips['floatingips']:
                 if ip['floating_ip_address'] == floating_ip:
-                    lgr.debug('VALIDATED:'
+                    lgr.debug('OK:'
                               'floating_ip {0} is allocated'
                               .format(floating_ip))
                     found_floating_ip = True
@@ -347,7 +341,7 @@ class OpenStackValidator:
                       ' of new floating ips')
             ips_quota = self._get_neutron_quota('floatingip')
             if ips_amount < ips_quota:
-                lgr.debug('VALIDATED:'
+                lgr.debug('OK:'
                           'a new ip can be allocated.'
                           ' provisioned ips: {0}, quota: {1}'
                           .format(ips_amount, ips_quota))
@@ -369,7 +363,7 @@ class OpenStackValidator:
         for type, all in resource_dict.iteritems():
             for resource in all:
                 if resource['name'] == resource_config['name']:
-                    lgr.debug('VALIDATED:'
+                    lgr.debug('OK:'
                               '{0} {1} found in pool'
                               .format(resource_type, resource_config['name']))
                     return
@@ -389,7 +383,7 @@ class OpenStackValidator:
         else:
             resource_quota = self._get_neutron_quota(resource_type)
             if resource_amount < resource_quota:
-                lgr.debug('VALIDATED:'
+                lgr.debug('OK:'
                           '{0} {1} can be created.'
                           ' privisioned {2}s: {3}, quota: {4}'
                           .format(resource_type, resource_config['name'],
@@ -411,7 +405,7 @@ class OpenStackValidator:
                   .format(cidr))
         try:
             IP(cidr)
-            lgr.debug('VALIDATED:'
+            lgr.debug('OK:'
                       '{0} is a valid address range.'.format(cidr))
         except ValueError as e:
             err = ('config file validation error originating at key: {0}, '
@@ -425,7 +419,7 @@ class OpenStackValidator:
         images = self.nova_client.images.list()
         for i in images:
             if image in i.name or image in i.human_id or image in i.id:
-                lgr.debug('VALIDATED:'
+                lgr.debug('OK:'
                           'image {0} exists'.format(image))
                 return
         err = ('config file validation error originating at key: {0}, '
@@ -442,7 +436,7 @@ class OpenStackValidator:
         flavors = self.nova_client.flavors.list()
         for f in flavors:
             if flavor in f.name or flavor in f.human_id or flavor in f.id:
-                lgr.debug('VALIDATED:'
+                lgr.debug('OK:'
                           'flavor {0} exists'.format(flavor))
                 return
         err = ('config file validation error originating at key: {0}, '
@@ -466,7 +460,7 @@ class OpenStackValidator:
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('copmute', []).append(err)
             return
-        lgr.debug('VALIDATED:'
+        lgr.debug('OK:'
                   'ssh key {0} has the correct permissions'.format(key_path))
 
     def validate_url_accessible(self, field, package_url):
@@ -478,7 +472,7 @@ class OpenStackValidator:
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('cloudify', []).append(err)
             return
-        lgr.debug('VALIDATED:'
+        lgr.debug('OK:'
                   'url {0} is accessible'.format(package_url))
 
     def validate_path_owner(self, field, path):
@@ -501,7 +495,7 @@ class OpenStackValidator:
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('compute', []).append(err)
             return
-        lgr.debug('VALIDATED:'
+        lgr.debug('OK:'
                   '{0} is owned by the current user'.format(path))
 
 
