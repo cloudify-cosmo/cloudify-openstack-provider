@@ -25,7 +25,7 @@ import time
 import urllib
 from stat import ST_MODE
 from pwd import getpwnam, getpwuid
-import json
+# import json
 # import sys
 from getpass import getuser
 from os.path import expanduser
@@ -235,8 +235,8 @@ class ProviderManager(BaseProviderClass):
 
         lgr.error('resources validation failed!') if validation_errors \
             else lgr.info('resources validated successfully')
-        print json.dumps(validation_errors, sort_keys=True,
-                         indent=4, separators=(',', ': '))
+        # print json.dumps(validation_errors, sort_keys=True,
+        #                  indent=4, separators=(',', ': '))
         return validation_errors
 
     def teardown(self, provider_context, ignore_validation=False):
@@ -450,9 +450,10 @@ class OpenStackValidator:
     def validate_key_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
-        home = os.path.expanduser("~")
-        if key_path.startswith('~'):
-            key_path = key_path.replace('~', home)
+        # # home = os.path.expanduser("~")
+        # # if key_path.startswith('~'):
+        #     key_path = key_path.replace('~', home)
+        key_path = expanduser(key_path)
         if not oct(os.stat(key_path)[ST_MODE])[-3:] in VALID_KEY_PERMS:
             err = ('config file validation error originating at key: {0}, '
                    'ssh key {1} does not have the correct permissions'
@@ -479,9 +480,10 @@ class OpenStackValidator:
         lgr.debug('checking whether dir {0} is owned by the current user'
                   .format(path))
 
-        home = os.path.expanduser("~")
-        if path.startswith('~'):
-            path = path.replace('~', home)
+        # home = os.path.expanduser("~")
+        # if path.startswith('~'):
+        #     path = path.replace('~', home)
+        path = expanduser(path)
         user = getuser()
 
         owner = getpwuid(os.stat(path).st_uid).pw_name
