@@ -73,9 +73,10 @@ class ProviderManager(BaseProviderClass):
     inherits BaseProviderClass from the cli containing the following
      methods:
     init: initializes provider config files.
-    bootstrap: installs cloudify on the managemente server.
+    bootstrap: installs cloudify on the management server.
     validate_config_schema: validates a schema file against the provider
      configuration file supplied with the provider module.
+    (for more info on BaseProviderClass, see the CLI's documentation.)
 
     ProviderManager classes:
     __init__: *mandatory*
@@ -83,10 +84,13 @@ class ProviderManager(BaseProviderClass):
     validate: *optional*
     teardown: *mandatory*
     """
-    def __init__(self, provider_config, is_verbose_output=False):
+    def __init__(self, provider_config=None, is_verbose_output=False):
         """
         :param dict provider_config: inherits the config yaml from the cli
         :param bool is_verbose_output: self explanatory
+        :param dict schema: is an optional parameter containing a jsonschema
+         object. If initialized it will automatically trigger schema validation
+         for the provider.
         """
         self.provider_config = provider_config
         self.is_verbose_output = is_verbose_output
@@ -257,7 +261,7 @@ class ProviderManager(BaseProviderClass):
     def _get_driver(self, provider_config, provider_context=None):
         """
         comfort driver for provisioning and teardown.
-        this is not mandatory
+        this is not a mandatory method.
         """
         set_global_verbosity_level(self.is_verbose_output)
         # provider_config = _read_config(config_path)
@@ -502,7 +506,9 @@ class OpenStackValidator:
 
 
 class CosmoOnOpenStackDriver(object):
-    """ Bootstraps Cosmo on OpenStack """
+    """
+    in change or provisioning and teardown of resources.
+    """
 
     def __init__(self, provider_config, provider_context, network_controller,
                  subnet_controller, router_controller, sg_controller,
@@ -1528,7 +1534,3 @@ class OpenStackConnector(object):
 
     def get_nova_client(self):
         return self.nova_client
-
-
-class ValidationError(Exception):
-    pass
