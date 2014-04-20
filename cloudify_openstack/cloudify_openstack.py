@@ -25,10 +25,15 @@ import time
 import urllib
 from stat import ST_MODE
 from pwd import getpwnam, getpwuid
-# import json
+import json
 # import sys
+import shutil
 from getpass import getuser
 from os.path import expanduser
+from fabric.api import put
+from fabric.context_managers import settings
+# from os.path import expanduser
+import tempfile
 
 # Validator
 from IPy import IP
@@ -111,6 +116,7 @@ class ProviderManager(BaseProviderClass):
         driver = self._get_driver(self.provider_config)
         mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
+        driver.copy_files_to_manager(mgmt_ip)
         return mgmt_ip, private_ip, ssh_key, ssh_user, provider_context
 
     def validate(self, validation_errors={}):
@@ -526,6 +532,61 @@ class CosmoOnOpenStackDriver(object):
 
         global verbose_output
         self.verbose_output = verbose_output
+
+    def copy_files_to_manager(self, mgmt_ip):
+        def _copy(userhome_on_management,
+                  keystone_config, agents_key_path,
+                  networking):
+            lgr.info('uploading keystone and neutron files to manager')
+
+            tempdir = tempfile.mkdtemp()
+
+            put(agents_key_path, userhome_on_management + '/.ssh')
+            keystone_file_path = _make_keystone_file(tempdir,
+                                                     keystone_config)
+            put(keystone_file_path, userhome_on_management)
+            if networking['neutron_supported_region']:
+                neutron_file_path = _make_neutron_file(tempdir,
+                                                       networking)
+                put(neutron_file_path, userhome_on_management)
+
+            shutil.rmtree(tempdir)
+
+        def _make_keystone_file(tempdir, keystone_config):
+            # put default region in keystone_config file
+            keystone_config['region'] = \
+                self.config['compute']['region']
+            keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
+            with open(keystone_file_path, 'w') as f:
+                json.dump(keystone_config, f)
+            return keystone_file_path
+
+        def _make_neutron_file(tempdir, networking):
+            neutron_file_path = os.path.join(tempdir, 'neutron_config.json')
+            with open(neutron_file_path, 'w') as f:
+                json.dump({'url': networking['neutron_url']}, f)
+            return neutron_file_path
+
+        def _get_private_key_path_from_keypair_config(keypair_config):
+            path = keypair_config['provided']['private_key_filepath'] if \
+                'provided' in keypair_config else \
+                keypair_config['auto_generated']['private_key_target_path']
+            return expanduser(path)
+
+        compute_config = self.config['compute']
+        mgmt_server_config = compute_config['management_server']
+
+        with settings(host_string=mgmt_ip):
+            try:
+                _copy(
+                    mgmt_server_config['userhome_on_management'],
+                    self.config['keystone'],
+                    _get_private_key_path_from_keypair_config(
+                        compute_config['agent_servers']['agents_keypair']),
+                    self.config['networking'])
+            except:
+                lgr.error('failed to copy keystone files')
+                return False
 
     def create_topology(self):
         resources = {}
