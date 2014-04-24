@@ -1899,7 +1899,7 @@ class OpenStackKeypairController(BaseControllerNova):
                                "or public key filepath to create keypair")
 
         if public_key_filepath:
-            with open(public_key_filepath, 'r') as f:
+            with open(expanduser(public_key_filepath), 'r') as f:
                 keypair = self.nova_client.keypairs.create(key_name, f.read())
         else:
             keypair = self.nova_client.keypairs.create(key_name)
