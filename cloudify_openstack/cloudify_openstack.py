@@ -26,13 +26,11 @@ import urllib
 from stat import ST_MODE
 from pwd import getpwnam, getpwuid
 import json
-# import sys
 import shutil
 from getpass import getuser
 from os.path import expanduser
-from fabric.api import put
+from fabric.api import put, env
 from fabric.context_managers import settings
-# from os.path import expanduser
 import tempfile
 
 # Validator
@@ -46,6 +44,8 @@ import neutronclient.neutron.client as neutron_client
 
 # from CLI
 # provides a logger to be used throughout the provider code
+# returns a tuple of a main (file+console logger) and a file
+# (file only) logger.
 from cosmo_cli.cosmo_cli import init_logger
 # provides a way to set the global verbosity level
 # from cosmo_cli.cosmo_cli import set_global_verbosity_level
@@ -68,7 +68,6 @@ verbose_output = False
 # declare validation_errors dict
 
 # initialize logger
-# TODO: document logger initialization
 lgr, flgr = init_logger()
 
 
@@ -78,6 +77,9 @@ class ProviderManager(BaseProviderClass):
 
     inherits BaseProviderClass from the cli containing the following
      methods:
+    __init__: initializes base mandatory params provider_config and
+     is_verbose_output. additionally, optionally receives a schema param
+     that enables the default schema validation method to be executed.
     bootstrap: installs cloudify on the management server.
     validate_config_schema: validates a schema file against the provider
      configuration file supplied with the provider module.
@@ -89,8 +91,7 @@ class ProviderManager(BaseProviderClass):
     validate: *mandatory*
     teardown: *mandatory*
     """
-    # TODO: set global verbosity level in the base class and let the user know
-    # he can override it by calling the set_global_verbosity_level method.
+
     def __init__(self, provider_config=None, is_verbose_output=False):
         """
         initializes base params.
@@ -120,7 +121,7 @@ class ProviderManager(BaseProviderClass):
         driver = self._get_driver(self.provider_config)
         public_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
-        driver.copy_files_to_manager(public_ip)
+        driver.copy_files_to_manager(public_ip, ssh_key, ssh_user)
         return public_ip, private_ip, ssh_key, ssh_user, provider_context
 
     def validate(self, validation_errors={}):
@@ -271,7 +272,6 @@ class ProviderManager(BaseProviderClass):
         comfort driver for provisioning and teardown.
         this is not a mandatory method.
         """
-        # provider_config = _read_config(config_path)
         provider_context = provider_context if provider_context else {}
         connector = OpenStackConnector(provider_config)
         network_controller = OpenStackNetworkController(connector)
@@ -461,9 +461,6 @@ class OpenStackValidator:
     def validate_key_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
-        # # home = os.path.expanduser("~")
-        # # if key_path.startswith('~'):
-        #     key_path = key_path.replace('~', home)
         key_path = expanduser(key_path)
         if not oct(os.stat(key_path)[ST_MODE])[-3:] in VALID_KEY_PERMS:
             err = ('config file validation error originating at key: {0}, '
@@ -491,15 +488,12 @@ class OpenStackValidator:
         lgr.debug('checking whether dir {0} is owned by the current user'
                   .format(path))
 
-        # home = os.path.expanduser("~")
-        # if path.startswith('~'):
-        #     path = path.replace('~', home)
         path = expanduser(path)
         user = getuser()
-
         owner = getpwuid(os.stat(path).st_uid).pw_name
         current_user_id = str(getpwnam(user).pw_uid)
         owner_id = str(os.stat(path).st_uid)
+
         if not current_user_id == owner_id:
             err = ('config file validation error originating at key: {0}, '
                    '{1} is not owned by the current user'
@@ -533,14 +527,28 @@ class CosmoOnOpenStackDriver(object):
         global verbose_output
         self.verbose_output = verbose_output
 
-    def copy_files_to_manager(self, mgmt_ip):
+    def copy_files_to_manager(self, mgmt_ip, ssh_key, ssh_user):
         def _copy(userhome_on_management,
                   keystone_config, agents_key_path,
                   networking):
-            lgr.info('uploading keystone and neutron files to manager')
 
+            env.user = ssh_user
+            env.key_filename = ssh_key
+            env.abort_on_prompts = False
+            env.connection_attempts = 12
+            env.keepalive = 0
+            env.linewise = False
+            env.pool_size = 0
+            env.skip_bad_hosts = False
+            env.timeout = 5
+            env.forward_agent = True
+            env.status = False
+            env.disable_known_hosts = False
+
+            lgr.info('uploading keystone and neutron files to manager')
             tempdir = tempfile.mkdtemp()
 
+            # TODO: handle failed copy operations
             put(agents_key_path, userhome_on_management + '/.ssh')
             keystone_file_path = _make_keystone_file(tempdir,
                                                      keystone_config)
@@ -577,16 +585,12 @@ class CosmoOnOpenStackDriver(object):
         mgmt_server_config = compute_config['management_server']
 
         with settings(host_string=mgmt_ip):
-            # try:
             _copy(
                 mgmt_server_config['userhome_on_management'],
                 self.config['keystone'],
                 _get_private_key_path_from_keypair_config(
                     compute_config['agent_servers']['agents_keypair']),
                 self.config['networking'])
-            # except:
-            #     lgr.error('failed to copy keystone files')
-            return False
 
     def create_topology(self):
         resources = {}
