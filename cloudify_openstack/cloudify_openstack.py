@@ -37,7 +37,7 @@ import tempfile
 
 # Validator
 from IPy import IP
-from schemas import PROVIDER_SCHEMA
+from schemas import PROVIDER_CONFIG_SCHEMA
 
 # OpenStack
 import keystoneclient.v2_0.client as keystone_client
@@ -48,7 +48,7 @@ import neutronclient.neutron.client as neutron_client
 # provides a logger to be used throughout the provider code
 from cosmo_cli.cosmo_cli import init_logger
 # provides a way to set the global verbosity level
-from cosmo_cli.cosmo_cli import set_global_verbosity_level
+# from cosmo_cli.cosmo_cli import set_global_verbosity_level
 # provides 2 base methods to be used.
 # if not imported, the bootstrap method must be implemented
 from cosmo_cli.cosmo_cli import BaseProviderClass
@@ -68,6 +68,7 @@ verbose_output = False
 # declare validation_errors dict
 
 # initialize logger
+# TODO: document logger initialization
 lgr, flgr = init_logger()
 
 
@@ -77,50 +78,52 @@ class ProviderManager(BaseProviderClass):
 
     inherits BaseProviderClass from the cli containing the following
      methods:
-    init: initializes provider config files.
     bootstrap: installs cloudify on the management server.
     validate_config_schema: validates a schema file against the provider
      configuration file supplied with the provider module.
     (for more info on BaseProviderClass, see the CLI's documentation.)
 
     ProviderManager classes:
-    __init__: *mandatory*
+    __init__: *optional* - only if more params are initialized
     provision: *mandatory*
-    validate: *optional*
+    validate: *mandatory*
     teardown: *mandatory*
     """
+    # TODO: set global verbosity level in the base class and let the user know
+    # he can override it by calling the set_global_verbosity_level method.
     def __init__(self, provider_config=None, is_verbose_output=False):
         """
+        initializes base params.
+        provider_config and is_verbose_output are initialized in the
+         base class and are mandatory. if more params are needed, super can
+         be used to init provider_config and is_verbose_output.
+
         :param dict provider_config: inherits the config yaml from the cli
         :param bool is_verbose_output: self explanatory
         :param dict schema: is an optional parameter containing a jsonschema
          object. If initialized it will automatically trigger schema validation
          for the provider.
         """
-        self.provider_config = provider_config
-        self.is_verbose_output = is_verbose_output
-        self.schema = PROVIDER_SCHEMA
+        super(ProviderManager, self).__init__(provider_config,
+                                              is_verbose_output,
+                                              schema=PROVIDER_CONFIG_SCHEMA)
 
     def provision(self):
         """
         provisions resources for the management server
 
-        :param bool skip_validations: flag stating whether validations
-         should be skipped during provisioning
         :rtype: 'tuple' with the machine's public and private ip's,
          the ssh key and user configured in the config yaml and
          the prorivder's context (a dict containing the privisioned
          resources to be used during teardown)
         """
-        set_global_verbosity_level(self.is_verbose_output)
         driver = self._get_driver(self.provider_config)
-        mgmt_ip, private_ip, ssh_key, ssh_user, provider_context = \
+        public_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
-        driver.copy_files_to_manager(mgmt_ip)
-        return mgmt_ip, private_ip, ssh_key, ssh_user, provider_context
+        driver.copy_files_to_manager(public_ip)
+        return public_ip, private_ip, ssh_key, ssh_user, provider_context
 
     def validate(self, validation_errors={}):
-        set_global_verbosity_level(self.is_verbose_output)
         """
         validations to be performed before provisioning and bootstrapping
         the management server.
@@ -260,7 +263,6 @@ class ProviderManager(BaseProviderClass):
          conflicts during teardown
         :rtype: 'None'
         """
-        set_global_verbosity_level(self.is_verbose_output)
         driver = self._get_driver(self.provider_config, provider_context)
         driver.delete_topology(ignore_validation)
 
@@ -269,7 +271,6 @@ class ProviderManager(BaseProviderClass):
         comfort driver for provisioning and teardown.
         this is not a mandatory method.
         """
-        set_global_verbosity_level(self.is_verbose_output)
         # provider_config = _read_config(config_path)
         provider_context = provider_context if provider_context else {}
         connector = OpenStackConnector(provider_config)
@@ -515,7 +516,6 @@ class CosmoOnOpenStackDriver(object):
     """
     in change or provisioning and teardown of resources.
     """
-
     def __init__(self, provider_config, provider_context, network_controller,
                  subnet_controller, router_controller, sg_controller,
                  floating_ip_controller, keypair_controller,
@@ -577,16 +577,16 @@ class CosmoOnOpenStackDriver(object):
         mgmt_server_config = compute_config['management_server']
 
         with settings(host_string=mgmt_ip):
-            try:
-                _copy(
-                    mgmt_server_config['userhome_on_management'],
-                    self.config['keystone'],
-                    _get_private_key_path_from_keypair_config(
-                        compute_config['agent_servers']['agents_keypair']),
-                    self.config['networking'])
-            except:
-                lgr.error('failed to copy keystone files')
-                return False
+            # try:
+            _copy(
+                mgmt_server_config['userhome_on_management'],
+                self.config['keystone'],
+                _get_private_key_path_from_keypair_config(
+                    compute_config['agent_servers']['agents_keypair']),
+                self.config['networking'])
+            # except:
+            #     lgr.error('failed to copy keystone files')
+            return False
 
     def create_topology(self):
         resources = {}

@@ -14,7 +14,7 @@
 #    * See the License for the specific language governing permissions and
 #    * limitations under the License.
 
-PROVIDER_SCHEMA = {
+PROVIDER_CONFIG_SCHEMA = {
     "type":"object",
     "required":[
         'keystone',
@@ -26,8 +26,6 @@ PROVIDER_SCHEMA = {
         "cloudify": {
             "type":"object",
             "required":[
-                'cloudify_branch',
-                'cloudify_components_package_path',
                 'cloudify_components_package_url',
                 'cloudify_core_package_url',
             ],
