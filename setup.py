@@ -17,9 +17,9 @@ __author__ = 'ran'
 
 from setuptools import setup
 
-VERSION = '0.3'
+VERSION = '3.0'
 
-COSMO_CLI_VERSION = '0.3'
+COSMO_CLI_VERSION = '3.0'
 COSMO_CLI_BRANCH = 'develop'
 COSMO_CLI = \
     "https://github.com/cloudify-cosmo/cloudify-cli/tarball/{" \

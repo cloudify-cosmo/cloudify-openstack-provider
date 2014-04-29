@@ -51,7 +51,7 @@ from cosmo_cli.cosmo_cli import init_logger
 # from cosmo_cli.cosmo_cli import set_global_verbosity_level
 # provides 2 base methods to be used.
 # if not imported, the bootstrap method must be implemented
-from cosmo_cli.cosmo_cli import BaseProviderClass
+from cosmo_cli.provider_common import BaseProviderClass
 
 # declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
