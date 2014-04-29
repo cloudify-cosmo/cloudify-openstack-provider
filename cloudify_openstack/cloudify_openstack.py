@@ -56,7 +56,7 @@ from cosmo_cli.cosmo_cli import BaseProviderClass
 # declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
 # declare which ssh key permissions are valid for bootstrap
-VALID_KEY_PERMS = ['600']
+MINIMAL_KEY_PERMS = 600
 
 # declare which ports should be opened during provisioning
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
@@ -193,6 +193,8 @@ class ProviderManager(BaseProviderClass):
             networking_config['management_security_group'],
             resource_type='security_group',
             method='list_security_groups')
+
+        lgr.info('validating compute resources...')
         if 'floating_ip' in mgmt_server_config.keys() \
                 and verifier.validate_cidr_syntax(
                     'compute.management_server.floating_ip',
@@ -204,30 +206,38 @@ class ProviderManager(BaseProviderClass):
             verifier.validate_floating_ip(
                 'compute.management_server.floating_ip',
                 None)
-
-        lgr.info('validating compute resources...')
         verifier.validate_image_exists(
             'compute.management_server.instance.image',
             mgmt_server_config['instance']['image'])
         verifier.validate_flavor_exists(
             'compute.management_server.instance.flavor',
             mgmt_server_config['instance']['flavor'])
-        verifier.validate_key_perms(
-            'compute.management_server.management_keypair'
-            '.auto_generated.private_key_target_path',
-            mgmt_keypair_config['auto_generated']['private_key_target_path'])
-        verifier.validate_key_perms(
-            'compute.agent_servers.agents_keypair'
-            '.auto_generated.private_key_target_path',
-            agent_keypair_config['auto_generated']['private_key_target_path'])
-        verifier.validate_path_owner(
-            'compute.management_server.management_keypair'
-            '.auto_generated.private_key_target_path',
-            mgmt_keypair_config['auto_generated']['private_key_target_path'])
-        verifier.validate_path_owner(
-            'compute.agent_servers.agents_keypair'
-            '.auto_generated.private_key_target_path',
-            agent_keypair_config['auto_generated']['private_key_target_path'])
+        if verifier.check_key_exists(
+            mgmt_keypair_config['auto_generated']
+                               ['private_key_target_path']):
+            verifier.validate_key_perms(
+                'compute.management_server.management_keypair'
+                '.auto_generated.private_key_target_path',
+                mgmt_keypair_config['auto_generated']
+                                   ['private_key_target_path'])
+            verifier.validate_path_owner(
+                'compute.management_server.management_keypair'
+                '.auto_generated.private_key_target_path',
+                mgmt_keypair_config['auto_generated']
+                                   ['private_key_target_path'])
+        if verifier.check_key_exists(
+            agent_keypair_config['auto_generated']
+                                ['private_key_target_path']):
+            verifier.validate_key_perms(
+                'compute.agent_servers.agents_keypair'
+                '.auto_generated.private_key_target_path',
+                agent_keypair_config['auto_generated']
+                                    ['private_key_target_path'])
+            verifier.validate_path_owner(
+                'compute.agent_servers.agents_keypair'
+                '.auto_generated.private_key_target_path',
+                agent_keypair_config['auto_generated']
+                                    ['private_key_target_path'])
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
@@ -347,6 +357,8 @@ class OpenStackValidator:
                 for ip in ips['floatingips']:
                     lgr.info('    {0}'.format(ip['floating_ip_address']))
                 self.validation_errors.setdefault('networking', []).append(err)
+                return False
+            return True
         else:
             lgr.debug('checking whether quota allows allocation'
                       ' of new floating ips')
@@ -356,6 +368,7 @@ class OpenStackValidator:
                           'a new ip can be allocated.'
                           ' provisioned ips: {0}, quota: {1}'
                           .format(ips_amount, ips_quota))
+                return True
             else:
                 err = ('config file validation error originating at key: {0}, '
                        'a floating ip cannot be allocated due'
@@ -364,6 +377,7 @@ class OpenStackValidator:
                        .format(field, ips_amount, ips_quota))
                 lgr.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('networking', []).append(err)
+                return False
 
     def validate_neutron_resource(self, field, resource_config, resource_type,
                                   method):
@@ -377,7 +391,7 @@ class OpenStackValidator:
                     lgr.debug('OK:'
                               '{0} {1} found in pool'
                               .format(resource_type, resource_config['name']))
-                    return
+                    return True
         if not resource_config[CREATE_IF_MISSING]:
             err = ('config file validation error originating at key: {0}, '
                    '{1} {2} does not exist in the pool but is marked as'
@@ -391,6 +405,7 @@ class OpenStackValidator:
                 for resource in all:
                     lgr.info('    {0}'.format(resource['name']))
             self.validation_errors.setdefault('networking', []).append(err)
+            return False
         else:
             resource_quota = self._get_neutron_quota(resource_type)
             if resource_amount < resource_quota:
@@ -400,6 +415,7 @@ class OpenStackValidator:
                           .format(resource_type, resource_config['name'],
                                   resource_type, resource_amount,
                                   resource_quota))
+                return True
             else:
                 err = ('config file validation error originating at key: {0}, '
                        '{1} {2} cannot be created due'
@@ -410,6 +426,7 @@ class OpenStackValidator:
                                resource_quota))
                 lgr.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('networking', []).append(err)
+                return False
 
     def validate_cidr_syntax(self, field, cidr):
         lgr.debug('checking whether {0} is a valid address range...'
@@ -418,11 +435,13 @@ class OpenStackValidator:
             IP(cidr)
             lgr.debug('OK:'
                       '{0} is a valid address range.'.format(cidr))
+            return True
         except ValueError as e:
             err = ('config file validation error originating at key: {0}, '
                    '{1}'.format(field, e.message))
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('networking', []).append(err)
+            return False
 
     def validate_image_exists(self, field, image):
         image = str(image)
@@ -432,7 +451,7 @@ class OpenStackValidator:
             if image in i.name or image in i.human_id or image in i.id:
                 lgr.debug('OK:'
                           'image {0} exists'.format(image))
-                return
+                return True
         err = ('config file validation error originating at key: {0}, '
                'image {1} does not exist'.format(field, image))
         lgr.error('VALIDATION ERROR:' + err)
@@ -440,6 +459,7 @@ class OpenStackValidator:
         for i in images:
             lgr.info('    {0}'.format(i.name))
         self.validation_errors.setdefault('compute', []).append(err)
+        return False
 
     def validate_flavor_exists(self, field, flavor):
         flavor = str(flavor)
@@ -449,7 +469,7 @@ class OpenStackValidator:
             if flavor in f.name or flavor in f.human_id or flavor in f.id:
                 lgr.debug('OK:'
                           'flavor {0} exists'.format(flavor))
-                return
+                return True
         err = ('config file validation error originating at key: {0}, '
                'flavor {1} does not exist'.format(field, flavor))
         lgr.error('VALIDATION ERROR:' + err)
@@ -457,20 +477,30 @@ class OpenStackValidator:
         for f in flavors:
             lgr.info('    {0}'.format(f.name))
         self.validation_errors.setdefault('compute', []).append(err)
+        return False
+
+    def check_key_exists(self, key_path):
+        # lgr.debug('checking whether key {0} exists'
+        #           .format(key_path))
+        key_path = expanduser(key_path)
+        if not os.path.isfile(key_path):
+            return False
+        return True
 
     def validate_key_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         key_path = expanduser(key_path)
-        if not oct(os.stat(key_path)[ST_MODE])[-3:] in VALID_KEY_PERMS:
+        if not int(oct(os.stat(key_path)[ST_MODE])[-3:]) <= MINIMAL_KEY_PERMS:
             err = ('config file validation error originating at key: {0}, '
                    'ssh key {1} does not have the correct permissions'
-                   '({2}).'.format(field, key_path, VALID_KEY_PERMS))
+                   '({2}).'.format(field, key_path, MINIMAL_KEY_PERMS))
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('copmute', []).append(err)
-            return
+            return False
         lgr.debug('OK:'
                   'ssh key {0} has the correct permissions'.format(key_path))
+        return True
 
     def validate_url_accessible(self, field, package_url):
         lgr.debug('checking whether url {0} is accessible'.format(package_url))
@@ -480,9 +510,10 @@ class OpenStackValidator:
                    'url {1} is not accessible'.format(field, package_url))
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('cloudify', []).append(err)
-            return
+            return False
         lgr.debug('OK:'
                   'url {0} is accessible'.format(package_url))
+        return True
 
     def validate_path_owner(self, field, path):
         lgr.debug('checking whether dir {0} is owned by the current user'
@@ -504,6 +535,7 @@ class OpenStackValidator:
             return
         lgr.debug('OK:'
                   '{0} is owned by the current user'.format(path))
+        return True
 
 
 class CosmoOnOpenStackDriver(object):
@@ -1411,7 +1443,7 @@ class OpenStackKeypairController(BaseControllerNova):
                                "or public key filepath to create keypair")
 
         if public_key_filepath:
-            with open(public_key_filepath, 'r') as f:
+            with open(expanduser(public_key_filepath), 'r') as f:
                 keypair = self.nova_client.keypairs.create(key_name, f.read())
         else:
             keypair = self.nova_client.keypairs.create(key_name)
