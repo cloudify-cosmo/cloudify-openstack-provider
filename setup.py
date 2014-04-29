@@ -19,6 +19,13 @@ from setuptools import setup
 
 VERSION = '3.0'
 
+COSMO_CLI_VERSION = '3.0'
+COSMO_CLI_BRANCH = 'develop'
+COSMO_CLI = \
+    "https://github.com/cloudify-cosmo/cloudify-cli/tarball/{" \
+    "0}#egg=cloudify-cli-{1}".format(
+        COSMO_CLI_BRANCH, COSMO_CLI_VERSION)
+
 setup(
     name='cloudify-openstack-provider',
     version=VERSION,
@@ -33,9 +40,7 @@ setup(
         "python-novaclient==2.17.0",
         "python-keystoneclient==0.7.1",
         "python-neutronclient==2.3.4",
-        "scp==0.7.2",
-        "fabric==1.8.3",
-        "jsonschema==2.3.0",
         "IPy==0.81"
-    ]
+    ],
+    dependency_links=[COSMO_CLI]
 )
