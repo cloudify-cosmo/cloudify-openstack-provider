@@ -257,7 +257,7 @@ class ProviderManager(BaseProviderClass):
         # undeliverable due to nova client bug
         # verifier.validate_instance_quota()
 
-        lgr.error('resources validation failed!') if validation_errors \
+        lgr.error('resource validation failed!') if validation_errors \
             else lgr.info('resources validated successfully')
         # print json.dumps(validation_errors, sort_keys=True,
         #                  indent=4, separators=(',', ': '))
@@ -332,11 +332,11 @@ class OpenStackValidator:
         return quotas[resource]
 
     def validate_floating_ip(self, field, floating_ip):
-        lgr.debug('checking whether floating_ip {0} exists...'
-                  .format(floating_ip))
         ips = self.neutron_client.list_floatingips()
         ips_amount = len(ips['floatingips'])
         if floating_ip is not None:
+            lgr.debug('checking whether floating_ip {0} exists...'
+                      .format(floating_ip))
             found_floating_ip = False
             for ip in ips['floatingips']:
                 if ip['floating_ip_address'] == floating_ip:
