@@ -23,7 +23,7 @@ COSMO_CLI_VERSION = '3.0'
 COSMO_CLI_BRANCH = 'develop'
 COSMO_CLI = 'https://github.com/cloudify-cosmo/cloudify-cli/tarball/' \
             '{0}#egg=cloudify-cli-{1}'.format(COSMO_CLI_BRANCH,
-                                             COSMO_CLI_VERSION)
+                                              COSMO_CLI_VERSION)
 
 setup(
     name='cloudify-openstack-provider',
