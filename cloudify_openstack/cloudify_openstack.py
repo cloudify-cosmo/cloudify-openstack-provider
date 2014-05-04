@@ -384,14 +384,13 @@ class OpenStackValidator:
         lgr.debug('checking whether {0} {1} exists...'
                   .format(resource_type, resource_config['name']))
         resource_dict = getattr(self.neutron_client, method)()
-        resource_amount = len(resource_dict)
-        for type, all in resource_dict.iteritems():
-            for resource in all:
-                if resource['name'] == resource_config['name']:
-                    lgr.debug('OK:'
-                              '{0} {1} found in pool'
-                              .format(resource_type, resource_config['name']))
-                    return True
+        resource_amount = len(resource_dict.values()[0])
+        for resource in resource_dict.values()[0]:
+            if resource['name'] == resource_config['name']:
+                lgr.debug('OK:'
+                          '{0} {1} found in pool'
+                          .format(resource_type, resource_config['name']))
+                return True
         if not resource_config[CREATE_IF_MISSING]:
             err = ('config file validation error originating at key: {0}, '
                    '{1} {2} does not exist in the pool but is marked as'
