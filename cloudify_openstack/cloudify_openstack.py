@@ -1457,6 +1457,7 @@ class OpenStackKeypairController(BaseControllerNova):
         return self.nova_client.keypairs.get(id)
 
     def _mkdir_p(self, path):
+        path = expanduser(path)
         try:
             lgr.debug('creating dir {0}'
                       .format(path))
