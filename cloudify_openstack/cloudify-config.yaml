@@ -60,7 +60,6 @@ keystone:
 #                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
 #
 #cloudify:
-#    cloudify_branch: develop
 #    cloudify_components_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-components_3.0.0_amd64.deb
 #    cloudify_core_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-core_3.0.0_amd64.deb
 #    cloudify_ui_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-ui_1.0.0_amd64.deb
