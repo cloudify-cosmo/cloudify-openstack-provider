@@ -15,223 +15,220 @@
 #    * limitations under the License.
 
 PROVIDER_CONFIG_SCHEMA = {
-    "type":"object",
-    "required":[
+    "type": "object",
+    "required": [
         'keystone',
         'networking',
         'compute',
         'cloudify'
     ],
-    "properties":{
+    "properties": {
         "cloudify": {
-            "type":"object",
-            "required":[
+            "type": "object",
+            "required": [
                 'cloudify_components_package_url',
                 'cloudify_core_package_url',
             ],
-            "properties":{
-                "cloudify_branch": {
-                    "type":"string",
-                },
+            "properties": {
                 "cloudify_components_package_path": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "cloudify_components_package_url": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "cloudify_package_path": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "cloudify_core_package_url": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "cloudify_packages_path": {
-                    "type":"string",
+                    "type": "string",
                 }
             }
         },
         "compute": {
-            "type":"object",
-            "required":[
+            "type": "object",
+            "required": [
                 'management_server',
                 'agent_servers',
                 'region'
             ],
-            "properties":{
+            "properties": {
                 "agent_servers": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "agents_keypair": {
-                            "type":"object",
-                            "properties":{
+                            "type": "object",
+                            "properties": {
                                 "auto_generated": {
-                                    "type":"object",
-                                    "properties":{
+                                    "type": "object",
+                                    "properties": {
                                         "private_key_target_path": {
-                                            "type":"string",
+                                            "type": "string",
                                         }
                                     }
                                 },
                                 "externally_provisioned": {
-                                    "enum": [ True, False ],
+                                    "enum": [True, False],
                                 },
                                 "name": {
-                                    "type":"string",
+                                    "type": "string",
                                 }
                             }
                         }
                     }
                 },
                 "management_server": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "instance": {
-                            "type":"object",
-                            "properties":{
+                            "type": "object",
+                            "properties": {
                                 "externally_provisioned": {
-                                    "enum": [ True, False ],
+                                    "enum": [True, False],
                                 },
                                 "flavor": {
-                                    "type":"number",
+                                    "type": "number",
                                 },
                                 "image": {
                                     "type": ["number", "string"],
                                 },
                                 "name": {
-                                    "type":"string",
+                                    "type": "string",
                                 }
                             }
                         },
                         "management_keypair": {
-                            "type":"object",
-                            "properties":{
+                            "type": "object",
+                            "properties": {
                                 "auto_generated": {
-                                    "type":"object",
-                                    "properties":{
+                                    "type": "object",
+                                    "properties": {
                                         "private_key_target_path": {
-                                            "type":"string",
+                                            "type": "string",
                                         }
                                     }
                                 },
                                 "externally_provisioned": {
-                                    "enum": [ True, False ],
+                                    "enum": [True, False],
                                 },
                                 "name": {
-                                    "type":"string",
+                                    "type": "string",
                                 }
                             }
                         },
                         "user_on_management": {
-                            "type":"string",
+                            "type": "string",
                         },
                         "userhome_on_management": {
-                            "type":"string",
+                            "type": "string",
                         }
                     }
                 },
                 "region": {
-                    "type":"string",
+                    "type": "string",
                 }
             }
         },
         "keystone": {
-            "type":"object",
-            "properties":{
+            "type": "object",
+            "properties": {
                 "auth_url": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "password": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "tenant_name": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "username": {
-                    "type":"string",
+                    "type": "string",
                 }
             }
         },
         "networking": {
-            "type":"object",
-            "properties":{
+            "type": "object",
+            "properties": {
                 "agents_security_group": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "externally_provisioned": {
-                            "enum": [ True, False ],
+                            "enum": [True, False],
                         },
                         "name": {
-                            "type":"string",
+                            "type": "string",
                         }
                     }
                 },
                 "ext_network": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "externally_provisioned": {
-                            "enum": [ True, False ],
+                            "enum": [True, False],
                         },
                         "name": {
-                            "type":"string",
+                            "type": "string",
                         }
                     }
                 },
                 "int_network": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "externally_provisioned": {
-                            "enum": [ True, False ],
+                            "enum": [True, False],
                         },
                         "name": {
-                            "type":"string",
+                            "type": "string",
                         }
                     }
                 },
                 "management_security_group": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "cidr": {
-                            "type":"string",
+                            "type": "string",
                         },
                         "externally_provisioned": {
-                            "enum": [ True, False ],
+                            "enum": [True, False],
                         },
                         "name": {
-                            "type":"string",
+                            "type": "string",
                         }
                     }
                 },
                 "neutron_supported_region": {
-                    "enum": [ True, False ],
+                    "enum": [True, False],
                 },
                 "neutron_url": {
-                    "type":"string",
+                    "type": "string",
                 },
                 "router": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "externally_provisioned": {
-                            "enum": [ True, False ],
+                            "enum": [True, False],
                         },
                         "name": {
-                            "type":"string",
+                            "type": "string",
                         }
                     }
                 },
                 "subnet": {
-                    "type":"object",
-                    "properties":{
+                    "type": "object",
+                    "properties": {
                         "cidr": {
-                            "type":"string",
+                            "type": "string",
                         },
                         "externally_provisioned": {
-                            "enum": [ True, False ],
+                            "enum": [True, False],
                         },
                         "ip_version": {
-                            "enum": [ 4, 6 ],
+                            "enum": [4, 6],
                         },
                         "name": {
-                            "type":"string",
+                            "type": "string",
                         },
                         "dns_nameservers": {
                             "type": "array",
