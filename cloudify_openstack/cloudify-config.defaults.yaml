@@ -1,0 +1,102 @@
+keystone:
+    username: Enter-Openstack-Username-Here
+    password: Enter-Openstack-Password-Here
+    tenant_name: Enter-Openstack-Tenant-Name-Here
+    auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
+
+networking:
+    neutron_supported_region: true
+    neutron_url: https://region-b.geo-1.network.hpcloudsvc.com
+    int_network:
+        create_if_missing: true
+        name: cloudify-admin-network
+    subnet:
+        create_if_missing: true
+        name: cloudify-admin-network-subnet
+        ip_version: 4
+        cidr: 10.67.79.0/24
+        dns_nameservers: []
+    ext_network:
+        create_if_missing: false # For now, this must be 'create_if_missing': false
+        name: Ext-Net
+    router:
+        create_if_missing: true
+        name: cloudify-router
+    agents_security_group:
+        create_if_missing: true
+        name: cloudify-sg-agents
+    management_security_group:
+        create_if_missing: true
+        name: cloudify-sg-management
+        cidr: 0.0.0.0/0
+
+compute:
+    region: region-b.geo-1
+    management_server:
+        #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
+        user_on_management: ubuntu
+        userhome_on_management: /home/ubuntu
+        instance:
+            create_if_missing: true
+            name: cloudify-management-server
+            image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
+            flavor: 102
+        management_keypair:
+            create_if_missing: true
+            name: cloudify-management-kp
+            #provided:
+                #public_key_filepath: [PUBLIC-KEY-PATH]
+                #private_key_filepath: [PRIVATE-KEY-PATH]
+            auto_generated:
+                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+    agent_servers:
+        agents_keypair:
+            create_if_missing: true
+            name: cloudify-agents-kp
+            #provided:
+                #public_key_filepath: [PUBLIC-KEY-PATH]
+                #private_key_filepath: [PRIVATE-KEY-PATH]
+            auto_generated:
+                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
+
+cloudify:
+   cloudify_components_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-components_3.0.0_amd64.deb
+   cloudify_core_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-core_3.0.0_amd64.deb
+   cloudify_ui_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-ui_1.0.0_amd64.deb
+   cloudify_ubuntu_agent_url: https://dl.dropboxusercontent.com/u/407576/ubuntu-agent_3.0.0_amd64.deb
+
+#this section only applies to bootstrapping in --dev-mode
+dev:
+    #each section here is identified with one virtual environment
+    celery:
+        #which virtualenv dir does this apply to?
+        virtualenv: /opt/celery/cloudify.management__worker/env/
+        #which shell commands are run before the branches are deployed?
+        preruns:
+            - echo "Hi!"
+        downloads:
+            - https://github.com/cloudify-cosmo/cloudify-manager/archive/develop.tar.gz
+        #which branches will be applied to this virtualenv?
+        installs:
+            - /cloudify-manager-develop/plugins/agent-installer/
+            - /cloudify-manager-develop/plugins/plugin-installer/
+            - https://github.com/cloudify-cosmo/cloudify-plugins-common/archive/develop.tar.gz
+        #which shell commands are run after the branches are deployed?
+        runs:
+            - sudo /etc/init.d/celeryd-cloudify.management restart
+    manager:
+        virtualenv: /opt/manager
+        downloads:
+            - https://github.com/cloudify-cosmo/cloudify-manager/archive/develop.tar.gz
+        installs:
+            - /cloudify-manager-develop/rest-service/
+            - /cloudify-manager-develop/plugins/agent-installer/
+            - /cloudify-manager-develop/plugins/plugin-installer/
+        runs:
+            - sudo cp -R /tmp/opt/manager/cloudify-manager-develop/resources/rest-service/cloudify /opt/manager/resources  # for resources and workflow service
+            - sudo cp -R /tmp/opt/manager/cloudify-manager-develop/* /opt/manager/cloudify-manager-develop/  # for resources and workflow service
+            - sudo rm -rf /tmp/opt/manager/lib/python2.7/site-packages/rest-service
+            - sudo restart workflow
+            - sudo status workflow
+            - sudo restart manager
+            - sudo status manager
