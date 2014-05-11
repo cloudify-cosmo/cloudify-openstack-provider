@@ -20,7 +20,7 @@ from setuptools import setup
 VERSION = '1.0'
 
 COSMO_CLI_VERSION = '3.0'
-COSMO_CLI_BRANCH = 'master'
+COSMO_CLI_BRANCH = '3.0'
 COSMO_CLI = 'https://github.com/cloudify-cosmo/cloudify-cli/tarball/' \
             '{0}#egg=cloudify-cli-{1}'.format(COSMO_CLI_BRANCH,
                                               COSMO_CLI_VERSION)
