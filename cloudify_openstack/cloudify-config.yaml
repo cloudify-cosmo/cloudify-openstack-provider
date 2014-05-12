@@ -60,7 +60,7 @@ keystone:
 #                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
 #
 #cloudify:
-#    cloudify_components_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-components_3.0.0_amd64.deb
-#    cloudify_core_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-core_3.0.0_amd64.deb
-#    cloudify_ui_package_url: https://dl.dropboxusercontent.com/u/407576/cloudify-ui_1.0.0_amd64.deb
-#    cloudify_ubuntu_agent_url: https://dl.dropboxusercontent.com/u/407576/ubuntu-agent_3.0.0_amd64.deb
+#     cloudify_components_package_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/cloudify-components_3.0.0-beta-b1_amd64.deb
+#     cloudify_core_package_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/cloudify-core_3.0.0-beta-b1_amd64.deb
+#     cloudify_ui_package_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/cloudify-ui_3.0.0-beta-b1_amd64.deb
+#     cloudify_ubuntu_agent_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/ubuntu-agent_3.0.0-beta-b1_amd64.deb

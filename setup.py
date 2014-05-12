@@ -22,8 +22,8 @@ VERSION = '1.0'
 COSMO_CLI_VERSION = '3.0'
 COSMO_CLI_BRANCH = '3.0'
 COSMO_CLI = 'https://github.com/cloudify-cosmo/cloudify-cli/tarball/' \
-            '{0}#egg=cloudify-cli-{1}'.format(COSMO_CLI_BRANCH,
-                                              COSMO_CLI_VERSION)
+            '{0}#egg=cloudify-cli-{1}'.format(
+                COSMO_CLI_BRANCH, COSMO_CLI_VERSION)
 
 setup(
     name='cloudify-openstack-provider',
@@ -40,7 +40,7 @@ setup(
         "python-keystoneclient==0.7.1",
         "python-neutronclient==2.3.4",
         "IPy==0.81",
-        "cloudify-cli",
+        "cloudify-cli"
     ],
     dependency_links=[COSMO_CLI]
 )
