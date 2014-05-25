@@ -40,7 +40,6 @@ setup(
         "python-keystoneclient==0.7.1",
         "python-neutronclient==2.3.4",
         "IPy==0.81",
-        "fabric==1.8.3",
         "cloudify-cli"
     ],
     dependency_links=[COSMO_CLI]
