@@ -115,16 +115,19 @@ class ProviderManager(BaseProviderClass):
     def _modify_keystone_from_environment(self, config, environ):
         keystone_config = config['keystone']
 
-        self._modify_key_by_environ(keystone_config, "username", environ, "OS_USERNAME")
-        self._modify_key_by_environ(keystone_config, "password", environ, "OS_PASSWORD")
-        self._modify_key_by_environ(keystone_config, "tenant_name", environ, "OS_TENANT_NAME")
-        self._modify_key_by_environ(keystone_config, "tenant_id", environ, "OS_TENANT_ID")
-        self._modify_key_by_environ(keystone_config, "auth_url", environ, "OS_AUTH_URL")
-
-
+        self._modify_key_by_environ(keystone_config, "username", environ,
+                                    "OS_USERNAME")
+        self._modify_key_by_environ(keystone_config, "password", environ,
+                                    "OS_PASSWORD")
+        self._modify_key_by_environ(keystone_config, "tenant_name", environ,
+                                    "OS_TENANT_NAME")
+        self._modify_key_by_environ(keystone_config, "tenant_id", environ,
+                                    "OS_TENANT_ID")
+        self._modify_key_by_environ(keystone_config, "auth_url", environ,
+                                    "OS_AUTH_URL")
 
     def _modify_key_by_environ(self, dict, key, environ, env_var_name):
-        if not key in dict:
+        if key not in dict:
             if env_var_name in environ:
                 dict[key] = environ[env_var_name]
 
@@ -295,7 +298,6 @@ class ProviderManager(BaseProviderClass):
         """
         driver = self._get_driver(self.provider_config, provider_context)
         driver.delete_topology(ignore_validation)
-
 
     def _get_driver(self, provider_config, provider_context=None):
         """
