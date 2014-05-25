@@ -13,15 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ############
-from cloudify_openstack.cloudify_openstack import OpenStackConnector
 
 __author__ = 'barakm'
 
 import unittest
 import os
-import sys
-import shutil
-import subprocess
 import tempfile
 import cloudify_openstack.cloudify_openstack
 
@@ -51,12 +47,14 @@ class OpenStackProviderTest(unittest.TestCase):
         provider_config = {}
         provider_config["keystone"] = {}
         provider_config["keystone"]["auth_url"] = "http://nowhere"
-        #provider_config["keystone"]["username"] = "NO_USER"
+        # provider_config["keystone"]["username"] = "NO_USER"
         provider_config["keystone"]["password"] = "NO_PASSWORD"
 
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
-        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config, False)
-        self.assertEqual(provider_config["keystone"]["username"], "MODIFIED_NAME")
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+        self.assertEqual(provider_config["keystone"]["username"],
+                         "MODIFIED_NAME")
 
     def test_no_override_username_from_env(self):
         provider_config = {}
@@ -66,7 +64,8 @@ class OpenStackProviderTest(unittest.TestCase):
         provider_config["keystone"]["password"] = "NO_PASSWORD"
 
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
-        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config, False)
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
         self.assertEqual(provider_config["keystone"]["username"], "NO_USER")
 
     def test_override_all(self):
@@ -79,10 +78,15 @@ class OpenStackProviderTest(unittest.TestCase):
         os.environ["OS_AUTH_URL"] = "MODIFIED_URL"
         os.environ["OS_TENANT_ID"] = "MODIFIED_TENANT_ID"
 
-        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config, False)
-        self.assertEqual(provider_config["keystone"]["username"], "MODIFIED_NAME")
-        self.assertEqual(provider_config["keystone"]["password"], "MODIFIED_PASSWORD")
-        self.assertEqual(provider_config["keystone"]["tenant_name"], "MODIFIED_TENANT")
-        self.assertEqual(provider_config["keystone"]["auth_url"], "MODIFIED_URL")
-        self.assertEqual(provider_config["keystone"]["tenant_id"], "MODIFIED_TENANT_ID")
-
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+        self.assertEqual(provider_config["keystone"]["username"],
+                         "MODIFIED_NAME")
+        self.assertEqual(provider_config["keystone"]["password"],
+                         "MODIFIED_PASSWORD")
+        self.assertEqual(provider_config["keystone"]["tenant_name"],
+                         "MODIFIED_TENANT")
+        self.assertEqual(provider_config["keystone"]["auth_url"],
+                         "MODIFIED_URL")
+        self.assertEqual(provider_config["keystone"]["tenant_id"],
+                         "MODIFIED_TENANT_ID")
