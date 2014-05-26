@@ -121,21 +121,25 @@ class ProviderManager(BaseProviderClass):
             keystone_config = {}
 
         self._modify_key_by_environ(keystone_config, "username", environ,
-                                    "OS_USERNAME", ["Enter-Openstack-Username-Here"])
+                                    "OS_USERNAME",
+                                    ["Enter-Openstack-Username-Here"])
         self._modify_key_by_environ(keystone_config, "password", environ,
-                                    "OS_PASSWORD", ["Enter-Openstack-Password-Here"])
+                                    "OS_PASSWORD",
+                                    ["Enter-Openstack-Password-Here"])
         self._modify_key_by_environ(keystone_config, "tenant_name", environ,
-                                    "OS_TENANT_NAME", ["Enter-Openstack-Tenant-Name-Here"])
+                                    "OS_TENANT_NAME",
+                                    ["Enter-Openstack-Tenant-Name-Here"])
         self._modify_key_by_environ(keystone_config, "tenant_id", environ,
                                     "OS_TENANT_ID", [])
         self._modify_key_by_environ(keystone_config, "auth_url", environ,
                                     "OS_AUTH_URL", [])
+
         if not keystone_exists:
             if len(keystone_config) > 0:
                 config['keystone'] = keystone_config
 
-
-    def _modify_key_by_environ(self, dict, key, environ, env_var_name, default_values):
+    def _modify_key_by_environ(self, dict, key, environ,
+                               env_var_name, default_values):
         if key not in dict or dict[key] is None or dict[key] in default_values:
             if env_var_name in environ:
                 dict[key] = environ[env_var_name]

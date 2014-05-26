@@ -80,7 +80,7 @@ class OpenStackProviderTest(unittest.TestCase):
         provider_config = {}
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
-        self.assertFalse(provider_config.has_key('keystone'))
+        self.assertFalse('keystone' in provider_config)
 
     def test_no_keystone_with_env(self):
         provider_config = {}
@@ -88,16 +88,19 @@ class OpenStackProviderTest(unittest.TestCase):
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
-        self.assertTrue(provider_config.has_key('keystone'))
+        self.assertTrue('keystone' in provider_config)
         self.assertEqual(os.environ["OS_USERNAME"],
                          provider_config['keystone']['username'])
 
     def test_override_default(self):
         provider_config = {}
         provider_config['keystone'] = {}
-        provider_config['keystone']['username'] = 'Enter-Openstack-Username-Here'
-        provider_config['keystone']['password'] = 'Enter-Openstack-Password-Here'
-        provider_config['keystone']['tenant_name'] = 'Enter-Openstack-Tenant-Name-Here'
+        provider_config['keystone']['username'] = \
+            'Enter-Openstack-Username-Here'
+        provider_config['keystone']['password'] = \
+            'Enter-Openstack-Password-Here'
+        provider_config['keystone']['tenant_name'] = \
+            'Enter-Openstack-Tenant-Name-Here'
 
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
         os.environ["OS_PASSWORD"] = "MODIFIED_PASSWORD"
@@ -105,11 +108,10 @@ class OpenStackProviderTest(unittest.TestCase):
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
-        self.assertTrue(provider_config.has_key('keystone'))
+        self.assertTrue('keystone' in provider_config)
         self.assertEqual(provider_config["keystone"]["username"],
                          "MODIFIED_NAME")
         self.assertEqual(provider_config["keystone"]["password"],
                          "MODIFIED_PASSWORD")
         self.assertEqual(provider_config["keystone"]["tenant_name"],
                          "MODIFIED_TENANT")
-
