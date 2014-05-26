@@ -140,7 +140,7 @@ class ProviderManager(BaseProviderClass):
 
     def _modify_key_by_environ(self, dict, key, environ,
                                env_var_name, default_values):
-        if key not in dict or dict[key] is None or dict[key] in default_values:
+        if dict.get(key, None) is None or dict[key] in default_values:
             if env_var_name in environ:
                 dict[key] = environ[env_var_name]
 
