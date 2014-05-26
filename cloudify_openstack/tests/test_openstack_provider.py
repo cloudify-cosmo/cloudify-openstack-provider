@@ -91,3 +91,25 @@ class OpenStackProviderTest(unittest.TestCase):
         self.assertTrue(provider_config.has_key('keystone'))
         self.assertEqual(os.environ["OS_USERNAME"],
                          provider_config['keystone']['username'])
+
+    def test_override_default(self):
+        provider_config = {}
+        provider_config['keystone'] = {}
+        provider_config['keystone']['username'] = 'Enter-Openstack-Username-Here'
+        provider_config['keystone']['password'] = 'Enter-Openstack-Password-Here'
+        provider_config['keystone']['tenant_name'] = 'Enter-Openstack-Tenant-Name-Here'
+
+        os.environ["OS_USERNAME"] = "MODIFIED_NAME"
+        os.environ["OS_PASSWORD"] = "MODIFIED_PASSWORD"
+        os.environ["OS_TENANT_NAME"] = "MODIFIED_TENANT"
+
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+        self.assertTrue(provider_config.has_key('keystone'))
+        self.assertEqual(provider_config["keystone"]["username"],
+                         "MODIFIED_NAME")
+        self.assertEqual(provider_config["keystone"]["password"],
+                         "MODIFIED_PASSWORD")
+        self.assertEqual(provider_config["keystone"]["tenant_name"],
+                         "MODIFIED_TENANT")
+
