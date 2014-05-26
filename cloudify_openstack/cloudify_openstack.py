@@ -113,7 +113,12 @@ class ProviderManager(BaseProviderClass):
                                               schema=PROVIDER_CONFIG_SCHEMA)
 
     def _modify_keystone_from_environment(self, config, environ):
-        keystone_config = config['keystone']
+        keystone_exists = False
+        if 'keystone' in config:
+            keystone_exists = True
+            keystone_config = config['keystone']
+        else:
+            keystone_config = {}
 
         self._modify_key_by_environ(keystone_config, "username", environ,
                                     "OS_USERNAME")
@@ -125,6 +130,10 @@ class ProviderManager(BaseProviderClass):
                                     "OS_TENANT_ID")
         self._modify_key_by_environ(keystone_config, "auth_url", environ,
                                     "OS_AUTH_URL")
+        if not keystone_exists:
+            if len(keystone_config) > 0:
+                config['keystone'] = keystone_config
+
 
     def _modify_key_by_environ(self, dict, key, environ, env_var_name):
         if key not in dict:

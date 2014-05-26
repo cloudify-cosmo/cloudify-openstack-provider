@@ -28,21 +28,6 @@ THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 class OpenStackProviderTest(unittest.TestCase):
 
-    # @classmethod
-    # def setUpClass(cls):
-    #     os.mkdir(TEST_DIR)
-    #
-    # @classmethod
-    # def tearDownClass(cls):
-    #     shutil.rmtree(TEST_DIR)
-    #
-    # def setUp(self):
-    #     os.mkdir(TEST_WORK_DIR)
-    #     os.chdir(TEST_WORK_DIR)
-    #
-    # def tearDown(self):
-    #     shutil.rmtree(TEST_WORK_DIR)
-
     def test_override_username_from_env(self):
         provider_config = {}
         provider_config["keystone"] = {}
@@ -90,3 +75,19 @@ class OpenStackProviderTest(unittest.TestCase):
                          "MODIFIED_URL")
         self.assertEqual(provider_config["keystone"]["tenant_id"],
                          "MODIFIED_TENANT_ID")
+
+    def test_no_keystone_and_no_env(self):
+        provider_config = {}
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+        self.assertFalse(provider_config.has_key('keystone'))
+
+    def test_no_keystone_with_env(self):
+        provider_config = {}
+        os.environ["OS_USERNAME"] = "MODIFIED_NAME"
+
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+        self.assertTrue(provider_config.has_key('keystone'))
+        self.assertEqual(os.environ["OS_USERNAME"],
+                         provider_config['keystone']['username'])
