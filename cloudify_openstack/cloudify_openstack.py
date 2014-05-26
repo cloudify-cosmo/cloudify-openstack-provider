@@ -24,7 +24,6 @@ import itertools
 import time
 import urllib
 from stat import ST_MODE
-from pwd import getpwnam, getpwuid
 import json
 import shutil
 from getpass import getuser
@@ -32,6 +31,7 @@ from os.path import expanduser
 from fabric.api import put, env
 from fabric.context_managers import settings
 import tempfile
+import platform
 
 # Validator
 from IPy import IP
@@ -65,7 +65,9 @@ INTERNAL_AGENT_PORTS = (22,)
 
 # declare default verbosity state
 verbose_output = False
-# declare validation_errors dict
+# declare os types for validation checks
+linuxd = ('Linux')
+wind = ('Windows')
 
 # initialize logger
 lgr, flgr = init_logger()
@@ -95,15 +97,21 @@ class ProviderManager(BaseProviderClass):
     def __init__(self, provider_config=None, is_verbose_output=False):
         """
         initializes base params.
+
         provider_config and is_verbose_output are initialized in the
          base class and are mandatory. if more params are needed, super can
-         be used to init provider_config and is_verbose_output.
+         be used to init a different provider_config and is_verbose_output.
+
+        "schema" is an optional parameter containing a jsonschema
+         object (dict). If initialized it will automatically trigger schema
+         validation for the provider. Schema validation will be performed
+         using the default validate_schema method (from the base class).
+         a new "validate_schema" method can be supplied if needed to replace
+         the default one.
 
         :param dict provider_config: inherits the config yaml from the cli
         :param bool is_verbose_output: self explanatory
-        :param dict schema: is an optional parameter containing a jsonschema
-         object. If initialized it will automatically trigger schema validation
-         for the provider.
+        :param dict schema: json schema for validation
         """
 
         self._modify_keystone_from_environment(provider_config, os.environ)
@@ -148,10 +156,13 @@ class ProviderManager(BaseProviderClass):
         """
         provisions resources for the management server
 
-        :rtype: 'tuple' with the machine's public and private ip's,
+        returns a tuple with the machine's public and private ip's,
          the ssh key and user configured in the config yaml and
          the prorivder's context (a dict containing the privisioned
          resources to be used during teardown)
+        the tuple's order should correspond with the above order.
+
+        :rtype: 'tuple' with machine context.
         """
         driver = self._get_driver(self.provider_config)
         public_ip, private_ip, ssh_key, ssh_user, provider_context = \
@@ -162,12 +173,16 @@ class ProviderManager(BaseProviderClass):
     def validate(self, validation_errors={}):
         """
         validations to be performed before provisioning and bootstrapping
-        the management server.
+         the management server.
+
+        returns a dict of lists of validation errors. each list corresponds
+         with a logical section of the validations (e.g, compute, networking..)
+
+        ..note: provisioning will continue only if the returned dict is empty.
 
         :param dict schema: a schema dict to validate the provider config
          against
-        :rtype: 'dict' representing validation_errors. provisioning will
-         continue only if the dict is empty.
+        :rtype: 'dict' of validation_errors.
         """
         # get openstack clients
         connector = OpenStackConnector(self.provider_config)
@@ -247,32 +262,33 @@ class ProviderManager(BaseProviderClass):
         verifier.validate_flavor_exists(
             'compute.management_server.instance.flavor',
             mgmt_server_config['instance']['flavor'])
-        if verifier.check_key_exists(
-            mgmt_keypair_config['auto_generated']
-                               ['private_key_target_path']):
-            verifier.validate_key_perms(
-                'compute.management_server.management_keypair'
-                '.auto_generated.private_key_target_path',
+        if platform.system() in linuxd:
+            if verifier.check_key_exists(
                 mgmt_keypair_config['auto_generated']
-                                   ['private_key_target_path'])
-            verifier.validate_path_owner(
-                'compute.management_server.management_keypair'
-                '.auto_generated.private_key_target_path',
-                mgmt_keypair_config['auto_generated']
-                                   ['private_key_target_path'])
-        if verifier.check_key_exists(
-            agent_keypair_config['auto_generated']
-                                ['private_key_target_path']):
-            verifier.validate_key_perms(
-                'compute.agent_servers.agents_keypair'
-                '.auto_generated.private_key_target_path',
+                                   ['private_key_target_path']):
+                verifier.validate_key_perms(
+                    'compute.management_server.management_keypair'
+                    '.auto_generated.private_key_target_path',
+                    mgmt_keypair_config['auto_generated']
+                                       ['private_key_target_path'])
+                verifier.validate_path_owner(
+                    'compute.management_server.management_keypair'
+                    '.auto_generated.private_key_target_path',
+                    mgmt_keypair_config['auto_generated']
+                                       ['private_key_target_path'])
+            if verifier.check_key_exists(
                 agent_keypair_config['auto_generated']
-                                    ['private_key_target_path'])
-            verifier.validate_path_owner(
-                'compute.agent_servers.agents_keypair'
-                '.auto_generated.private_key_target_path',
-                agent_keypair_config['auto_generated']
-                                    ['private_key_target_path'])
+                                    ['private_key_target_path']):
+                verifier.validate_key_perms(
+                    'compute.agent_servers.agents_keypair'
+                    '.auto_generated.private_key_target_path',
+                    agent_keypair_config['auto_generated']
+                                        ['private_key_target_path'])
+                verifier.validate_path_owner(
+                    'compute.agent_servers.agents_keypair'
+                    '.auto_generated.private_key_target_path',
+                    agent_keypair_config['auto_generated']
+                                        ['private_key_target_path'])
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
@@ -552,6 +568,7 @@ class OpenStackValidator:
     def validate_path_owner(self, field, path):
         lgr.debug('checking whether dir {0} is owned by the current user'
                   .format(path))
+        from pwd import getpwnam, getpwuid
 
         path = expanduser(path)
         user = getuser()
