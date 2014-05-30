@@ -1627,7 +1627,7 @@ class OpenStackServerController(BaseControllerNova):
         return server.networks[network_name]
 
     def _wait_for_server_to_become_active(self, server_name, server):
-        timeout = 100
+        timeout = 300
         while server.status != "ACTIVE":
             timeout -= 5
             if timeout <= 0:
