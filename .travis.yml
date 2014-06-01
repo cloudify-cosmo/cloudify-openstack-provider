@@ -3,13 +3,11 @@ python:
   - "2.7"
 
 install:
-
-    # command to install dependencies
-    - pip install . --process-dependency-links
+    - git clone https://github.com/cloudify-cosmo/cloudify-cli --depth=1
+    - cd cloudify-cli; pip install . -r requirements.txt; cd ..
+    - pip install . -r requirements.txt
     - pip install flake8
 
 script:
-
     - flake8 .
-    # command to run tests
     - nosetests cloudify_openstack/tests
