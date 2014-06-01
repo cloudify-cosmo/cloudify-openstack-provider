@@ -69,6 +69,7 @@ cloudify:
         min_workers: 2
         max_workers: 5
         remote_execution_port: 22
+        #user: (no default - optional parameter)
 
 #this section only applies to bootstrapping in --dev-mode
 dev:
