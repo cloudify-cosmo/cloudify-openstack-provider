@@ -76,6 +76,28 @@ class OpenStackProviderTest(unittest.TestCase):
         self.assertEqual(provider_config["keystone"]["tenant_id"],
                          "MODIFIED_TENANT_ID")
 
+    def test_override_all_no_keystone(self):
+        provider_config = {}
+
+        os.environ["OS_USERNAME"] = "MODIFIED_NAME"
+        os.environ["OS_PASSWORD"] = "MODIFIED_PASSWORD"
+        os.environ["OS_TENANT_NAME"] = "MODIFIED_TENANT"
+        os.environ["OS_AUTH_URL"] = "MODIFIED_URL"
+        os.environ["OS_TENANT_ID"] = "MODIFIED_TENANT_ID"
+
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+        self.assertEqual(provider_config["keystone"]["username"],
+                         "MODIFIED_NAME")
+        self.assertEqual(provider_config["keystone"]["password"],
+                         "MODIFIED_PASSWORD")
+        self.assertEqual(provider_config["keystone"]["tenant_name"],
+                         "MODIFIED_TENANT")
+        self.assertEqual(provider_config["keystone"]["auth_url"],
+                         "MODIFIED_URL")
+        self.assertEqual(provider_config["keystone"]["tenant_id"],
+                         "MODIFIED_TENANT_ID")
+
     def test_no_keystone_and_no_env(self):
         provider_config = {}
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
@@ -101,10 +123,13 @@ class OpenStackProviderTest(unittest.TestCase):
             'Enter-Openstack-Password-Here'
         provider_config['keystone']['tenant_name'] = \
             'Enter-Openstack-Tenant-Name-Here'
+        provider_config['keystone']['auth_url'] = \
+            'Enter-Openstack-Auth-Url-Here'
 
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
         os.environ["OS_PASSWORD"] = "MODIFIED_PASSWORD"
         os.environ["OS_TENANT_NAME"] = "MODIFIED_TENANT"
+        os.environ["OS_AUTH_URL"] = "MODIFIED_URL"
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
@@ -115,3 +140,5 @@ class OpenStackProviderTest(unittest.TestCase):
                          "MODIFIED_PASSWORD")
         self.assertEqual(provider_config["keystone"]["tenant_name"],
                          "MODIFIED_TENANT")
+        self.assertEqual(provider_config["keystone"]["auth_url"],
+                         "MODIFIED_URL")

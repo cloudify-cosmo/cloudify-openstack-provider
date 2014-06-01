@@ -122,25 +122,26 @@ class ProviderManager(BaseProviderClass):
 
     def _modify_keystone_from_environment(self, config, environ):
         keystone_exists = False
-        if 'keystone' in config:
+        keystone_config = config.get('keystone', None)
+        if keystone_config is not None:
             keystone_exists = True
-            keystone_config = config['keystone']
         else:
             keystone_config = {}
 
         self._modify_key_by_environ(keystone_config, "username", environ,
                                     "OS_USERNAME",
-                                    ["Enter-Openstack-Username-Here"])
+                                    ["Enter-Openstack-Username-Here", ''])
         self._modify_key_by_environ(keystone_config, "password", environ,
                                     "OS_PASSWORD",
-                                    ["Enter-Openstack-Password-Here"])
+                                    ["Enter-Openstack-Password-Here", ''])
         self._modify_key_by_environ(keystone_config, "tenant_name", environ,
                                     "OS_TENANT_NAME",
-                                    ["Enter-Openstack-Tenant-Name-Here"])
+                                    ["Enter-Openstack-Tenant-Name-Here", ''])
         self._modify_key_by_environ(keystone_config, "tenant_id", environ,
-                                    "OS_TENANT_ID", [])
+                                    "OS_TENANT_ID", [''])
         self._modify_key_by_environ(keystone_config, "auth_url", environ,
-                                    "OS_AUTH_URL", [])
+                                    "OS_AUTH_URL",
+                                    ['Enter-Openstack-Auth-Url-Here', ''])
 
         if not keystone_exists:
             if len(keystone_config) > 0:
@@ -1655,6 +1656,11 @@ class OpenStackConnector(object):
             **self.config['keystone'])
 
         if self.config['networking']['neutron_supported_region']:
+
+            # if neutron not explicitly specified, use catalog to locate
+            # public URL of 'network' service
+            self._modify_neutron_url_from_catalog()
+
             self.neutron_client = \
                 neutron_client.Client('2.0',
                                       endpoint_url=provider_config
@@ -1674,6 +1680,28 @@ class OpenStackConnector(object):
             region_name=self.config['compute']['region'],
             http_log_debug=False
         )
+
+    def _modify_neutron_url_from_catalog(self):
+        """
+        If neutron URL is not set or is empty, use the public URL
+        """
+        neutron_url = None
+        if self.config['networking'].get('neutron_url', '') == '':
+            # neutron service names differ in some installations
+            neutron_service_names = ['network', 'neutron']
+            region = self.config['compute']['region']
+
+            for service_name in neutron_service_names:
+                neutron_url = \
+                    self.keystone_client.service_catalog.url_for(
+                        service_type=service_name, endpoint_type='publicURL',
+                        region_name=region)
+
+                if neutron_url is not None:
+                    break
+
+        if neutron_url is not None:
+            self.config['networking']['neutron_url'] = neutron_url
 
     def get_keystone_client(self):
         return self.keystone_client
