@@ -2,11 +2,10 @@ keystone:
     username: Enter-Openstack-Username-Here
     password: Enter-Openstack-Password-Here
     tenant_name: Enter-Openstack-Tenant-Name-Here
-    auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
+    auth_url: Enter-Openstack-Auth-Url-Here
 
 networking:
     neutron_supported_region: true
-    neutron_url: https://region-b.geo-1.network.hpcloudsvc.com
     int_network:
         create_if_missing: true
         name: cloudify-admin-network
