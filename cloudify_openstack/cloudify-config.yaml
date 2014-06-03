@@ -1,3 +1,6 @@
+# prefix_for_all_resources: your_name_here
+# prefix_all_resources_random: True
+
 keystone:
     username: Enter-Openstack-Username-Here
     password: Enter-Openstack-Password-Here
