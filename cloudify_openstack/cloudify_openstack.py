@@ -32,6 +32,8 @@ from fabric.api import put, env
 from fabric.context_managers import settings
 import tempfile
 import platform
+import string
+import random
 
 # Validator
 from IPy import IP
@@ -62,6 +64,18 @@ MINIMAL_KEY_PERMS = 600
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 INTERNAL_AGENT_PORTS = (22,)
+
+# Resources to prefix
+# In each one of them, the "name" is prefixed.
+CONFIG_LOCATIONS_TO_PREFIX = (
+    ('networking', 'int_network'),
+    ('networking', 'subnet'),
+    # ('networking', 'ext_network'),
+    ('networking', 'router'),
+    ('networking', 'agents_security_group'),
+    ('networking', 'management_security_group'),
+    ('compute', 'management_server', 'instance'),
+)
 
 # declare default verbosity state
 verbose_output = False
@@ -115,6 +129,7 @@ class ProviderManager(BaseProviderClass):
         """
 
         self._modify_keystone_from_environment(provider_config, os.environ)
+        self._add_prefix(provider_config)
 
         super(ProviderManager, self).__init__(provider_config,
                                               is_verbose_output,
@@ -152,6 +167,33 @@ class ProviderManager(BaseProviderClass):
         if dict.get(key, None) is None or dict[key] in default_values:
             if env_var_name in environ:
                 dict[key] = environ[env_var_name]
+
+    def _get_prefix(self, config):
+        pfx = config.get('prefix_for_all_resources', '')
+        if pfx:
+            pfx = pfx + '_'
+        if config.get('prefix_all_resources_random'):
+            pfx = (
+                pfx +
+                ''.join(random.choice(string.digits) for _ in range(6)) +
+                '_'
+            )
+        return pfx
+
+    def _add_prefix(self, config):
+        pfx = self._get_prefix(config)
+        for path in CONFIG_LOCATIONS_TO_PREFIX:
+            self._add_prefix_kern(config, path + ('name',), pfx)
+
+    def _add_prefix_kern(self, config, path, pfx):
+        if not path:
+            return
+        if path[0] not in config:
+            return
+        if len(path) == 1:
+            config[path[0]] = pfx + config[path[0]]
+            return
+        self._add_prefix_kern(config[path[0]], path[1:], pfx)
 
     def provision(self):
         """
