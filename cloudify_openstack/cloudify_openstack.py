@@ -32,8 +32,6 @@ from fabric.api import put, env
 from fabric.context_managers import settings
 import tempfile
 import platform
-import string
-import random
 
 # Validator
 from IPy import IP
@@ -64,18 +62,6 @@ MINIMAL_KEY_PERMS = 600
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 INTERNAL_AGENT_PORTS = (22,)
-
-# Resources to prefix
-# In each one of them, the "name" is prefixed.
-CONFIG_LOCATIONS_TO_PREFIX = (
-    ('networking', 'int_network'),
-    ('networking', 'subnet'),
-    # ('networking', 'ext_network'),
-    ('networking', 'router'),
-    ('networking', 'agents_security_group'),
-    ('networking', 'management_security_group'),
-    ('compute', 'management_server', 'instance'),
-)
 
 # declare default verbosity state
 verbose_output = False
@@ -108,6 +94,20 @@ class ProviderManager(BaseProviderClass):
     teardown: *mandatory*
     """
 
+    schema = PROVIDER_CONFIG_SCHEMA
+
+    # Resources to prefix
+    # In each one of them, the "name" is prefixed.
+    CONFIG_LOCATIONS_TO_PREFIX = (
+        ('networking', 'int_network'),
+        ('networking', 'subnet'),
+        # ('networking', 'ext_network'),
+        ('networking', 'router'),
+        ('networking', 'agents_security_group'),
+        ('networking', 'management_security_group'),
+        ('compute', 'management_server', 'instance'),
+    )
+
     def __init__(self, provider_config=None, is_verbose_output=False):
         """
         initializes base params.
@@ -129,11 +129,9 @@ class ProviderManager(BaseProviderClass):
         """
 
         self._modify_keystone_from_environment(provider_config, os.environ)
-        self._add_prefix(provider_config)
 
         super(ProviderManager, self).__init__(provider_config,
-                                              is_verbose_output,
-                                              schema=PROVIDER_CONFIG_SCHEMA)
+                                              is_verbose_output)
 
     def _modify_keystone_from_environment(self, config, environ):
         keystone_exists = False
@@ -168,33 +166,6 @@ class ProviderManager(BaseProviderClass):
             if env_var_name in environ:
                 dict[key] = environ[env_var_name]
 
-    def _get_prefix(self, config):
-        pfx = config.get('prefix_for_all_resources', '')
-        if pfx:
-            pfx = pfx + '_'
-        if config.get('prefix_all_resources_random'):
-            pfx = (
-                pfx +
-                ''.join(random.choice(string.digits) for _ in range(6)) +
-                '_'
-            )
-        return pfx
-
-    def _add_prefix(self, config):
-        pfx = self._get_prefix(config)
-        for path in CONFIG_LOCATIONS_TO_PREFIX:
-            self._add_prefix_kern(config, path + ('name',), pfx)
-
-    def _add_prefix_kern(self, config, path, pfx):
-        if not path:
-            return
-        if path[0] not in config:
-            return
-        if len(path) == 1:
-            config[path[0]] = pfx + config[path[0]]
-            return
-        self._add_prefix_kern(config[path[0]], path[1:], pfx)
-
     def provision(self):
         """
         provisions resources for the management server
@@ -213,7 +184,7 @@ class ProviderManager(BaseProviderClass):
         driver.copy_files_to_manager(public_ip, ssh_key, ssh_user)
         return public_ip, private_ip, ssh_key, ssh_user, provider_context
 
-    def validate(self, validation_errors={}):
+    def validate(self):
         """
         validations to be performed before provisioning and bootstrapping
          the management server.
@@ -230,8 +201,7 @@ class ProviderManager(BaseProviderClass):
         # get openstack clients
         connector = OpenStackConnector(self.provider_config)
         # get verifier object
-        verifier = OpenStackValidator(validation_errors,
-                                      connector.get_nova_client(),
+        verifier = OpenStackValidator(connector.get_nova_client(),
                                       connector.get_neutron_client(),
                                       connector.get_keystone_client())
 
@@ -255,11 +225,11 @@ class ProviderManager(BaseProviderClass):
             networking_config['management_security_group']['cidr'])
 
         lgr.info('validating networking resources...')
-        if 'neutron_url' in networking_config.keys():
+        if 'neutron_url' in networking_config:
             verifier.validate_url_accessible(
                 'networking.network_url',
                 networking_config['neutron_url'])
-        if 'router' in networking_config.keys():
+        if 'router' in networking_config:
             verifier.validate_neutron_resource(
                 'networking.router.name',
                 networking_config['router'],
@@ -275,7 +245,7 @@ class ProviderManager(BaseProviderClass):
             networking_config['int_network'],
             resource_type='network',
             method='list_networks')
-        if 'agents_security_group' in networking_config.keys():
+        if 'agents_security_group' in networking_config:
             verifier.validate_neutron_resource(
                 'networking.agents_security_group.name',
                 networking_config['agents_security_group'],
@@ -288,7 +258,7 @@ class ProviderManager(BaseProviderClass):
             method='list_security_groups')
 
         lgr.info('validating compute resources...')
-        if 'floating_ip' in mgmt_server_config.keys() \
+        if 'floating_ip' in mgmt_server_config \
                 and verifier.validate_cidr_syntax(
                     'compute.management_server.floating_ip',
                     mgmt_server_config['floating_ip']):
@@ -350,6 +320,8 @@ class ProviderManager(BaseProviderClass):
         # verifier.validate_keystone_service_exists('neutron')
         # undeliverable due to nova client bug
         # verifier.validate_instance_quota()
+
+        validation_errors = verifier.validation_errors
 
         lgr.error('resource validation failed!') if validation_errors \
             else lgr.info('resources validated successfully')
@@ -413,9 +385,8 @@ class OpenStackValidator:
     we'll check if the element exists and if it doesn't, check if there's
     quota to create the element, and if there isn't, alert.
     """
-    def __init__(self, validation_errors, nova_client, neutron_client,
-                 keystone_client):
-        self.validation_errors = validation_errors
+    def __init__(self, nova_client, neutron_client, keystone_client):
+        self.validation_errors = {}
         self.nova_client = nova_client
         self.neutron_client = neutron_client
         self.keystone_client = keystone_client

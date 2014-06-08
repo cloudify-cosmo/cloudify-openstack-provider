@@ -23,12 +23,6 @@ PROVIDER_CONFIG_SCHEMA = {
         'cloudify'
     ],
     "properties": {
-        "prefix_for_all_resources": {
-            "type": "string",
-        },
-        "prefix_all_resources_random": {
-            "type": "boolean",
-        },
         "cloudify": {
             "type": "object",
             "required": [
