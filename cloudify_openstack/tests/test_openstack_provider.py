@@ -20,18 +20,6 @@ import unittest
 import os
 import cloudify_openstack.cloudify_openstack
 
-
-CONFIG_LOCATIONS_TO_PREFIX = (
-    ('networking', 'int_network'),
-    ('networking', 'subnet'),
-    # ('networking', 'ext_network'),
-    ('networking', 'router'),
-    ('networking', 'agents_security_group'),
-    ('networking', 'management_security_group'),
-    ('compute', 'management_server', 'instance'),
-)
-
-
 class OpenStackProviderTest(unittest.TestCase):
 
     # Overrides from environment
@@ -164,32 +152,6 @@ class OpenStackProviderTest(unittest.TestCase):
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
 
-    def test_prefix_static(self):
-        provider_config = self._get_provider_config_for_prefix_tests()
-        provider_config['prefix_for_all_resources'] = 'p1'
-        provider_config['prefix_all_resources_random'] = False
-        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              False)
-        self._assert_prefixed_locations_match(
-            provider_config, lambda l: 'p1_' + l.upper())
-
-    def test_prefix_random(self):
-        provider_config = self._get_provider_config_for_prefix_tests()
-        provider_config['prefix_all_resources_random'] = True
-        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              False)
-        self._assert_prefixed_locations_match(
-            provider_config, lambda l: '[0-9]+_' + l.upper())
-
-    def test_prefix_static_and_random(self):
-        provider_config = self._get_provider_config_for_prefix_tests()
-        provider_config['prefix_for_all_resources'] = 'p1'
-        provider_config['prefix_all_resources_random'] = True
-        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              False)
-        self._assert_prefixed_locations_match(
-            provider_config, lambda l: 'p1_[0-9]+_' + l.upper())
-
     # Utilities
 
     def _clear_openstack_environment(self):
@@ -197,28 +159,3 @@ class OpenStackProviderTest(unittest.TestCase):
         vars_to_remove = [k for k in env if k.startswith('OS_')]
         for k in vars_to_remove:
             del env[k]
-
-    def _get_provider_config_for_prefix_tests(self):
-        cfg = {}
-        for path in CONFIG_LOCATIONS_TO_PREFIX:
-            item = self._create_nested_hashes(cfg, path)
-            item['name'] = path[-1].upper()
-        return cfg
-
-    def _create_nested_hashes(self, h, path):
-        if not path:
-            return h
-        h[path[0]] = h.get(path[0], {})
-        return self._create_nested_hashes(h[path[0]], path[1:])
-
-    def _traverse_nested_hashes(self, h, path):
-        if not path:
-            return h
-        return self._traverse_nested_hashes(h[path[0]], path[1:])
-
-    def _assert_prefixed_locations_match(self, provider_config, f):
-        """ Asserts that all 'name's in CONFIG_LOCATIONS_TO_PREFIX
-        locations of 'provider_config' match the regex returned by 'f' """
-        for path in CONFIG_LOCATIONS_TO_PREFIX:
-            item = self._traverse_nested_hashes(provider_config, path)
-            self.assertRegexpMatches(item['name'], '^' + f(path[-1]) + '$')

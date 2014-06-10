@@ -21,9 +21,9 @@ import os
 import errno
 import inspect
 import itertools
+import re
 import time
 import urllib
-from stat import ST_MODE
 import json
 import shutil
 from getpass import getuser
@@ -55,8 +55,6 @@ from cosmo_cli.provider_common import BaseProviderClass
 
 # declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
-# declare which ssh key permissions are valid for bootstrap
-MINIMAL_KEY_PERMS = 600
 
 # declare which ports should be opened during provisioning
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
@@ -98,14 +96,31 @@ class ProviderManager(BaseProviderClass):
 
     # Resources to prefix
     # In each one of them, the "name" is prefixed.
-    CONFIG_LOCATIONS_TO_PREFIX = (
+    CONFIG_NAMES_TO_MODIFY = (
         ('networking', 'int_network'),
         ('networking', 'subnet'),
         # ('networking', 'ext_network'),
         ('networking', 'router'),
         ('networking', 'agents_security_group'),
         ('networking', 'management_security_group'),
+        ('compute', 'agent_servers', 'agents_keypair'),
         ('compute', 'management_server', 'instance'),
+        ('compute', 'management_server', 'management_keypair'),
+    )
+
+    CONFIG_FILES_PATHS_TO_MODIFY = (
+        ('compute', 'agent_servers', 'agents_keypair',
+            'auto_generated', 'private_key_target_path'),
+        ('compute', 'agent_servers', 'agents_keypair',
+            'provided', 'private_key_filepath'),
+        ('compute', 'agent_servers', 'agents_keypair',
+            'provided', 'public_key_filepath'),
+        ('compute', 'management_server', 'management_keypair',
+            'auto_generated', 'private_key_target_path'),
+        ('compute', 'management_server', 'management_keypair',
+            'provided', 'private_key_filepath'),
+        ('compute', 'management_server', 'management_keypair',
+            'provided', 'public_key_filepath'),
     )
 
     def __init__(self, provider_config=None, is_verbose_output=False):
@@ -530,7 +545,7 @@ class OpenStackValidator:
         lgr.debug('checking whether flavor {0} exists...'.format(flavor))
         flavors = self.nova_client.flavors.list()
         for f in flavors:
-            if flavor in f.name or flavor in f.human_id or flavor in f.id:
+            if flavor in (f.name, f.human_id, f.id):
                 lgr.debug('OK:'
                           'flavor {0} exists'.format(flavor))
                 return True
@@ -539,7 +554,7 @@ class OpenStackValidator:
         lgr.error('VALIDATION ERROR:' + err)
         lgr.info('list of available flavors:')
         for f in flavors:
-            lgr.info('    {0}'.format(f.name))
+            lgr.info('    {0:>10} - {1}'.format(f.id, f.name))
         self.validation_errors.setdefault('compute', []).append(err)
         return False
 
@@ -547,18 +562,16 @@ class OpenStackValidator:
         # lgr.debug('checking whether key {0} exists'
         #           .format(key_path))
         key_path = expanduser(key_path)
-        if not os.path.isfile(key_path):
-            return False
-        return True
+        return os.path.isfile(key_path)
 
     def validate_key_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         key_path = expanduser(key_path)
-        if not int(oct(os.stat(key_path)[ST_MODE])[-3:]) <= MINIMAL_KEY_PERMS:
+        if not os.access(key_path, os.R_OK | os.W_OK):
             err = ('config file validation error originating at key: {0}, '
-                   'ssh key {1} does not have the correct permissions'
-                   '({2}).'.format(field, key_path, MINIMAL_KEY_PERMS))
+                   'ssh key {1} is not readable and/or writeable'.format(
+                       field, key_path))
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('copmute', []).append(err)
             return False
@@ -597,7 +610,7 @@ class OpenStackValidator:
                    .format(field, path, owner))
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('compute', []).append(err)
-            return
+            return False
         lgr.debug('OK:'
                   '{0} is owned by the current user'.format(path))
         return True
@@ -1165,12 +1178,11 @@ class BaseController(object):
             the_id = self.ensure_exists(name, *args, **kw)
             created = False
         else:
-            if CREATE_IF_MISSING in provider_config \
-                    and not provider_config[CREATE_IF_MISSING]:
-                raise OpenStackLogicError("{0} '{1}' is not configured to"
-                                          " create_if_missing but but does not"
-                                          " exist."
-                                          .format(self.__class__.WHAT, name))
+            if not provider_config.get(CREATE_IF_MISSING, True):
+                raise OpenStackLogicError("{0} '{1}' does not exist but "
+                                          "create_if_missing is false or "
+                                          "absent.".format(self.__class__.WHAT,
+                                                           name))
             the_id = self._create(name, *args, **kw)
             created = True
         return the_id, created
@@ -1525,8 +1537,7 @@ class OpenStackKeypairController(BaseControllerNova):
     def _mkdir_p(self, path):
         path = expanduser(path)
         try:
-            lgr.debug('creating dir {0}'
-                      .format(path))
+            lgr.debug('creating dir {0}'.format(path))
             os.makedirs(path)
         except OSError, exc:
             if exc.errno == errno.EEXIST and os.path.isdir(path):
@@ -1547,7 +1558,8 @@ class OpenStackServerController(BaseControllerNova):
     WHAT = 'server'
 
     def list_objects_with_name(self, name):
-        servers = self.nova_client.servers.list(True, {'name': name})
+        name_re = '^' + re.escape(name) + '$'
+        servers = self.nova_client.servers.list(True, {'name': name_re})
         return [{'id': server.id} for server in servers]
 
     def create(self, name, server_config, management_server_keypair_name,
