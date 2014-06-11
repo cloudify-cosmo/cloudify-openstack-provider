@@ -30,7 +30,7 @@ networking:
         cidr: 0.0.0.0/0
 
 compute:
-    region: region-b.geo-1
+    region: RegionOne
     management_server:
         #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
         user_on_management: ubuntu
@@ -38,7 +38,7 @@ compute:
         instance:
             create_if_missing: true
             name: cloudify-management-server
-            image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
+            image: [Image-ID]
             flavor: 102
         management_keypair:
             create_if_missing: true
