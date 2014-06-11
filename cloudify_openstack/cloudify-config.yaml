@@ -1,12 +1,31 @@
+# Configuration file for the Cloudify Openstack Provider.
+# The settings in this file will be used for configure the Cloudify bootstrap process.
+# Please note:
+# 1. create_if_missing: Openstack components are references by their name.
+#    If this field is set to true (default) in any of the components,Cloudify will attempt to use the component if it already exists, and will create it if it does not.
+#    If this field is set to false, Cloudify will only use an existing resource. If it does not exist, bootstrapping will fail.
+
+# Keystone configuration. These settings are mandatory.
+# Note that you can set the keystone parameters using the following environment variables:
+# OS_USERNAME, OS_PASSWORD, OS_TENANT_NAME, OS_AUTH_URL
+# These settings are available in the horizon dashboard (Look for API credentials)
+# If using environment variables, you can delete the appropriate entry here, or leave the value empty.
 keystone:
     username: Enter-Openstack-Username-Here
     password: Enter-Openstack-Password-Here
     tenant_name: Enter-Openstack-Tenant-Name-Here
-#    auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
+    auth_url: Enter-Openstack-Auth-Url-Here
+
+
+# Network configuration
+#######################
 #
 #networking:
+#    # Indicates if neutron networking is used in the region to be used. Defaults to true
 #    neutron_supported_region: true
-#    neutron_url: https://region-b.geo-1.network.hpcloudsvc.com
+#    # URL of the neutron service. If not specified or left empty, the first neutron service available in keystone will be used.
+#    neutron_url:
+#    # Settings for the Cloudify Management Network and its components
 #    int_network:
 #        create_if_missing: true
 #        name: cloudify-admin-network
@@ -16,12 +35,15 @@ keystone:
 #        ip_version: 4
 #        cidr: 10.67.79.0/24
 #        dns_nameservers: []
+#    # The external network that Cloudify should plug its router into.
+#    # Note that Cloudify does not create the external network.
 #    ext_network:
-#        create_if_missing: false # For now, this must be 'create_if_missing': false
+#        create_if_missing: false # this must be set to false
 #        name: Ext-Net
 #    router:
 #        create_if_missing: true
 #        name: cloudify-router
+#    # Security groups used by Cloudify
 #    agents_security_group:
 #        create_if_missing: true
 #        name: cloudify-sg-agents
@@ -30,25 +52,39 @@ keystone:
 #        name: cloudify-sg-management
 #        cidr: 0.0.0.0/0
 #
+#  Compute Configuration
+########################
 #compute:
-#    region: region-b.geo-1
+#    # The region where resources will be provisioned. Defaults to RegionOne.
+#    region: [Enter-Region-Name]
 #    management_server:
-#        #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
+#        # uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
+#        #floating_ip: [FLOATING_IP]
+#        # username on management machine which Cloudify will use to bootstrap. The user must already exist on the image.
 #        user_on_management: ubuntu
+#        # Home directory of management user
 #        userhome_on_management: /home/ubuntu
+#        # Details of the management machine
 #        instance:
 #            create_if_missing: true
 #            name: cloudify-management-server
-#            image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
+#            # Mandatory. Set the image ID to be used for the management machine.
+#            # An openstack Image ID is usually a hexadecimal string like this one: 8c096c29-a666-4b82-99c4-c77dc70cfb40
+#            image: [Enter-Image-ID]
+#            # The flavor used for the management machine. Defaults to 102.
 #            flavor: 102
+#        # Keypair used for management.
 #        management_keypair:
 #            create_if_missing: true
 #            name: cloudify-management-kp
+#            # Uncomment the below and set the file paths to use an existing key pair.
 #            #provided:
 #                #public_key_filepath: [PUBLIC-KEY-PATH]
 #                #private_key_filepath: [PRIVATE-KEY-PATH]
 #            auto_generated:
+#                # Local file path where generated private key will be saved
 #                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+#    # Agent configuration
 #    agent_servers:
 #        agents_keypair:
 #            create_if_missing: true
@@ -59,6 +95,8 @@ keystone:
 #            auto_generated:
 #                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
 #
+# Cloudify Installation Configuration
+##################################
 #cloudify:
 #    cloudify_components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
 #    cloudify_core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
