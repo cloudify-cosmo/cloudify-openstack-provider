@@ -84,6 +84,7 @@ keystone:
 #            auto_generated:
 #                # Local file path where generated private key will be saved
 #                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+#    # Agent configuration
 #    agent_servers:
 #        agents_keypair:
 #            create_if_missing: true
@@ -94,6 +95,8 @@ keystone:
 #            auto_generated:
 #                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
 #
+# Cloudify Installation Configuration
+##################################
 #cloudify:
 #    cloudify_components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
 #    cloudify_core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
