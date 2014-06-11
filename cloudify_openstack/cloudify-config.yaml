@@ -56,7 +56,7 @@ keystone:
 ########################
 #compute:
 #    # The region where resources will be provisioned. Defaults to RegionOne.
-#    region: RegionOne
+#    region: [Enter-Region-Name]
 #    management_server:
 #        # uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
 #        #floating_ip: [FLOATING_IP]
