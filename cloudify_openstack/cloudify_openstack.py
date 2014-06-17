@@ -123,7 +123,8 @@ class ProviderManager(BaseProviderClass):
             'provided', 'public_key_filepath'),
     )
 
-    def __init__(self, provider_config=None, is_verbose_output=False):
+    def __init__(self, provider_config, prefix_for_all_resources,
+                 is_verbose_output):
         """
         initializes base params.
 
@@ -146,6 +147,7 @@ class ProviderManager(BaseProviderClass):
         self._modify_keystone_from_environment(provider_config, os.environ)
 
         super(ProviderManager, self).__init__(provider_config,
+                                              prefix_for_all_resources,
                                               is_verbose_output)
 
     def _modify_keystone_from_environment(self, config, environ):
@@ -363,7 +365,7 @@ class ProviderManager(BaseProviderClass):
         comfort driver for provisioning and teardown.
         this is not a mandatory method.
         """
-        provider_context = provider_context if provider_context else {}
+        provider_context = provider_context or {}
         connector = OpenStackConnector(provider_config)
         network_controller = OpenStackNetworkController(connector)
         subnet_controller = OpenStackSubnetController(connector)
@@ -655,8 +657,7 @@ class CosmoOnOpenStackDriver(object):
             env.status = False
             env.disable_known_hosts = False
 
-            lgr.info('uploading keystone, neutron and '
-                     'cloudify files to manager')
+            lgr.info('uploading keystone and neutron and files to manager')
             tempdir = tempfile.mkdtemp()
 
             # TODO: handle failed copy operations
@@ -668,8 +669,6 @@ class CosmoOnOpenStackDriver(object):
                 neutron_file_path = _make_neutron_file(tempdir,
                                                        networking)
                 put(neutron_file_path, userhome_on_management)
-            cloudify_file_path = _make_cloudify_file(tempdir, cloudify_config)
-            put(cloudify_file_path, userhome_on_management)
 
             shutil.rmtree(tempdir)
 
@@ -689,12 +688,6 @@ class CosmoOnOpenStackDriver(object):
         def _make_neutron_file(tempdir, networking):
             return _make_json_file(tempdir, 'neutron_config', {
                 'url': networking['neutron_url']
-            })
-
-        def _make_cloudify_file(tempdir, cloudify):
-            return _make_json_file(tempdir, 'cloudify_config', {
-                'prefix_for_all_resources':
-                cloudify.get('prefix_for_all_resources', '')
             })
 
         def _get_private_key_path_from_keypair_config(keypair_config):
