@@ -640,7 +640,7 @@ class CosmoOnOpenStackDriver(object):
     def copy_files_to_manager(self, mgmt_ip, ssh_key, ssh_user):
         def _copy(userhome_on_management,
                   keystone_config, agents_key_path,
-                  networking):
+                  networking, cloudify_config):
 
             env.user = ssh_user
             env.key_filename = ssh_key
@@ -655,7 +655,8 @@ class CosmoOnOpenStackDriver(object):
             env.status = False
             env.disable_known_hosts = False
 
-            lgr.info('uploading keystone and neutron files to manager')
+            lgr.info('uploading keystone, neutron and '
+                     'cloudify files to manager')
             tempdir = tempfile.mkdtemp()
 
             # TODO: handle failed copy operations
@@ -667,23 +668,34 @@ class CosmoOnOpenStackDriver(object):
                 neutron_file_path = _make_neutron_file(tempdir,
                                                        networking)
                 put(neutron_file_path, userhome_on_management)
+            cloudify_file_path = _make_cloudify_file(tempdir, cloudify_config)
+            put(cloudify_file_path, userhome_on_management)
 
             shutil.rmtree(tempdir)
 
+        def _make_json_file(tempdir, file_basename, data):
+            file_path = os.path.join(tempdir, file_basename + '.json')
+            with open(file_path, 'w') as f:
+                json.dump(data, f)
+            return file_path
+
         def _make_keystone_file(tempdir, keystone_config):
             # put default region in keystone_config file
-            keystone_config['region'] = \
-                self.config['compute']['region']
-            keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
-            with open(keystone_file_path, 'w') as f:
-                json.dump(keystone_config, f)
-            return keystone_file_path
+            config = {}
+            config.update(keystone_config)
+            config.update({'region': self.config['compute']['region']})
+            return _make_json_file(tempdir, 'keystone_config', config)
 
         def _make_neutron_file(tempdir, networking):
-            neutron_file_path = os.path.join(tempdir, 'neutron_config.json')
-            with open(neutron_file_path, 'w') as f:
-                json.dump({'url': networking['neutron_url']}, f)
-            return neutron_file_path
+            return _make_json_file(tempdir, 'neutron_config', {
+                'url': networking['neutron_url']
+            })
+
+        def _make_cloudify_file(tempdir, cloudify):
+            return _make_json_file(tempdir, 'cloudify_config', {
+                'prefix_for_all_resources':
+                cloudify.get('prefix_for_all_resources', '')
+            })
 
         def _get_private_key_path_from_keypair_config(keypair_config):
             path = keypair_config['provided']['private_key_filepath'] if \
@@ -700,7 +712,8 @@ class CosmoOnOpenStackDriver(object):
                 self.config['keystone'],
                 _get_private_key_path_from_keypair_config(
                     compute_config['agent_servers']['agents_keypair']),
-                self.config['networking'])
+                self.config['networking'],
+                self.config.get('cloudify', {}))
 
     def create_topology(self):
         resources = {}
