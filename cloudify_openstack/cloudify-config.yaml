@@ -108,3 +108,6 @@ keystone:
 #        max_workers: 5
 #        remote_execution_port: 22
 #        user: Enter-Default-Image-User-Here-(Optional)
+#    workflows:
+#            task_retries: -1  # -1 means we retry forever
+#            retry_interval: 30
