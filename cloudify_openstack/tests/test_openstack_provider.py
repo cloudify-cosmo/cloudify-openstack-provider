@@ -20,6 +20,7 @@ import unittest
 import os
 import cloudify_openstack.cloudify_openstack
 
+
 class OpenStackProviderTest(unittest.TestCase):
 
     # Overrides from environment
