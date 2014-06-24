@@ -123,8 +123,7 @@ class ProviderManager(BaseProviderClass):
             'provided', 'public_key_filepath'),
     )
 
-    def __init__(self, provider_config, prefix_for_all_resources,
-                 is_verbose_output):
+    def __init__(self, provider_config, is_verbose_output):
         """
         initializes base params.
 
@@ -147,7 +146,6 @@ class ProviderManager(BaseProviderClass):
         self._modify_keystone_from_environment(provider_config, os.environ)
 
         super(ProviderManager, self).__init__(provider_config,
-                                              prefix_for_all_resources,
                                               is_verbose_output)
 
     def _modify_keystone_from_environment(self, config, environ):

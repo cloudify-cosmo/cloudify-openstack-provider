@@ -34,7 +34,6 @@ class OpenStackProviderTest(unittest.TestCase):
 
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertEqual(provider_config["keystone"]["username"],
                          "MODIFIED_NAME")
@@ -48,7 +47,6 @@ class OpenStackProviderTest(unittest.TestCase):
 
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertEqual(provider_config["keystone"]["username"], "NO_USER")
 
@@ -63,7 +61,6 @@ class OpenStackProviderTest(unittest.TestCase):
         os.environ["OS_TENANT_ID"] = "MODIFIED_TENANT_ID"
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertEqual(provider_config["keystone"]["username"],
                          "MODIFIED_NAME")
@@ -86,7 +83,6 @@ class OpenStackProviderTest(unittest.TestCase):
         os.environ["OS_TENANT_ID"] = "MODIFIED_TENANT_ID"
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertEqual(provider_config["keystone"]["username"],
                          "MODIFIED_NAME")
@@ -103,7 +99,6 @@ class OpenStackProviderTest(unittest.TestCase):
         provider_config = {}
         self._clear_openstack_environment()
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertNotIn('keystone', provider_config)
 
@@ -112,7 +107,6 @@ class OpenStackProviderTest(unittest.TestCase):
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertIn('keystone', provider_config)
         self.assertEqual(os.environ["OS_USERNAME"],
@@ -137,7 +131,6 @@ class OpenStackProviderTest(unittest.TestCase):
         os.environ["OS_AUTH_URL"] = "MODIFIED_URL"
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
         self.assertIn('keystone', provider_config)
         self.assertEqual(provider_config["keystone"]["username"],
@@ -154,11 +147,10 @@ class OpenStackProviderTest(unittest.TestCase):
     def test_prefix_non_existing(self):
         """ Just see that there is no exception thrown """
         provider_config = {
-            'prefix_for_all_resources': 'p1',
+            'resources_prefix': 'p1',
             'prefix_all_resources_random': True,
         }
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
-                                                              '',
                                                               False)
 
     # Utilities
