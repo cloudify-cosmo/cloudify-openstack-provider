@@ -26,24 +26,28 @@ PROVIDER_CONFIG_SCHEMA = {
         "cloudify": {
             "type": "object",
             "required": [
-                'cloudify_components_package_url',
-                'cloudify_core_package_url',
+                'server',
             ],
             "properties": {
-                "cloudify_components_package_path": {
-                    "type": "string",
-                },
-                "cloudify_components_package_url": {
-                    "type": "string",
-                },
-                "cloudify_package_path": {
-                    "type": "string",
-                },
-                "cloudify_core_package_url": {
-                    "type": "string",
-                },
-                "cloudify_packages_path": {
-                    "type": "string",
+                "server": {
+                    "type": "object",
+                    "properties": {
+                        "packages": {
+                            "type": "object",
+                            "required": [
+                                'components_package_url',
+                                'core_package_url',
+                            ],
+                            "properties": {
+                                "components_package_url": {
+                                    "type": "string",
+                                },
+                                "core_package_url": {
+                                    "type": "string",
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },
