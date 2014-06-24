@@ -16,11 +16,6 @@
 __author__ = 'ran'
 
 from setuptools import setup
-from pip.req import parse_requirements
-
-install_requires = [
-    str(ir.req) for ir in parse_requirements('requirements.txt')]
-
 
 setup(
     name='cloudify-openstack-provider',
@@ -32,5 +27,11 @@ setup(
     description='Cloudify OpenStack provider',
     package_data={'cloudify_openstack': ['cloudify-config.yaml',
                                          'cloudify-config.defaults.yaml']},
-    install_requires=install_requires
+    install_requires=[
+        'python-novaclient==2.17.0',
+        'python-keystoneclient==0.7.1',
+        'python-neutronclient==2.3.4',
+        'IPy==0.81',
+        'cloudify-cli==3.0',
+    ]
 )
