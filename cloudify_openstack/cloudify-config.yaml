@@ -98,7 +98,8 @@ keystone:
 # Cloudify Installation Configuration
 ##################################
 #cloudify:
-#    prefix_for_all_resources: your_name_here
+#    # You would probably want a prefix that ends with underscore or dash
+#    resources_prefix: your_name_here
 #    cloudify_components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
 #    cloudify_core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
 #    cloudify_ui_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ui_amd64.deb
