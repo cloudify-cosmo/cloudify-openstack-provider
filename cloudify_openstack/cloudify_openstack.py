@@ -809,7 +809,8 @@ class CosmoOnOpenStackDriver(object):
                 False,
                 {k: v for k, v in insconf.iteritems() if k != CREATE_IF_MISSING},  # NOQA
                 mgr_kpconf['name'],
-                msg_id if is_neutron_supported_region else msgconf['name']
+                msg_id if is_neutron_supported_region else msgconf['name'],
+                compute_config['management_server']['creation_timeout']
             )
 
         if is_neutron_supported_region:
@@ -1542,7 +1543,7 @@ class OpenStackServerController(BaseControllerNova):
         return [{'id': server.id} for server in servers]
 
     def create(self, name, server_config, management_server_keypair_name,
-               sgm_id, *args, **kwargs):
+               sgm_id, creation_timeout, *args, **kwargs):
         """
         Creates a server. Exposes the parameters mentioned in
         http://docs.openstack.org/developer/python-novaclient/api/novaclient
@@ -1591,7 +1592,8 @@ class OpenStackServerController(BaseControllerNova):
         params['key_name'] = management_server_keypair_name
 
         server = self.nova_client.servers.create(**params)
-        server = self._wait_for_server_to_become_active(server_name, server)
+        server = self._wait_for_server_to_become_active(server_name, server,
+                                                        creation_timeout)
         return server.id
 
     def add_floating_ip(self, server_id, ip):
@@ -1631,12 +1633,14 @@ class OpenStackServerController(BaseControllerNova):
                 " network {2}".format(server.name, server_id, network_name))
         return server.networks[network_name]
 
-    def _wait_for_server_to_become_active(self, server_name, server):
-        timeout = 300
+    def _wait_for_server_to_become_active(self, server_name, server,
+                                          creation_timeout):
         while server.status != "ACTIVE":
-            timeout -= 5
-            if timeout <= 0:
-                raise RuntimeError('Server failed to start in time')
+            creation_timeout -= 5
+            if creation_timeout <= 0:
+                raise RuntimeError('Server failed to start in time (creation '
+                                   'timeout was {} seconds)'
+                                   .format(creation_timeout))
             time.sleep(5)
             server = self.nova_client.servers.get(server.id)
 

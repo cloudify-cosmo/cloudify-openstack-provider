@@ -64,6 +64,8 @@ keystone:
 #        user_on_management: ubuntu
 #        # Home directory of management user
 #        userhome_on_management: /home/ubuntu
+#        # Timeout (in seconds) for provisioning for the management machine.
+#        creation_timeout: 300
 #        # Details of the management machine
 #        instance:
 #            create_if_missing: true

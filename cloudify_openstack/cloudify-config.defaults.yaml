@@ -35,6 +35,7 @@ compute:
         #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
         user_on_management: ubuntu
         userhome_on_management: /home/ubuntu
+        creation_timeout: 300
         instance:
             create_if_missing: true
             name: cloudify-management-server

@@ -123,6 +123,9 @@ PROVIDER_CONFIG_SCHEMA = {
                         },
                         "userhome_on_management": {
                             "type": "string",
+                        },
+                        "creation_timeout": {
+                            "type": "string",
                         }
                     }
                 },
