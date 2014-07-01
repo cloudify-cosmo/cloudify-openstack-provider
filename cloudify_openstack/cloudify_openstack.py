@@ -74,24 +74,27 @@ lgr, flgr = init_logger()
 
 
 class ProviderManager(BaseProviderClass):
-    """class for base methods
-    name must be kept as is.
+    """class for base methods name must be kept as is.
 
     inherits BaseProviderClass from the cli containing the following
-     methods:
+    methods:
+
     __init__: initializes base mandatory params provider_config and
-     is_verbose_output. additionally, optionally receives a schema param
-     that enables the default schema validation method to be executed.
+    is_verbose_output. additionally, optionally receives a schema param
+    that enables the default schema validation method to be executed.
+
     bootstrap: installs cloudify on the management server.
+
     validate_config_schema: validates a schema file against the provider
-     configuration file supplied with the provider module.
+    configuration file supplied with the provider module.
     (for more info on BaseProviderClass, see the CLI's documentation.)
 
     ProviderManager classes:
-    __init__: *optional* - only if more params are initialized
-    provision: *mandatory*
-    validate: *mandatory*
-    teardown: *mandatory*
+
+    - __init__: *optional* - only if more params are initialized
+    - provision: *mandatory*
+    - validate: *mandatory*
+    - teardown: *mandatory*
     """
 
     def __init__(self, provider_config=None, is_verbose_output=False):
@@ -99,15 +102,15 @@ class ProviderManager(BaseProviderClass):
         initializes base params.
 
         provider_config and is_verbose_output are initialized in the
-         base class and are mandatory. if more params are needed, super can
-         be used to init a different provider_config and is_verbose_output.
+        base class and are mandatory. if more params are needed, super can
+        be used to init a different provider_config and is_verbose_output.
 
         "schema" is an optional parameter containing a jsonschema
-         object (dict). If initialized it will automatically trigger schema
-         validation for the provider. Schema validation will be performed
-         using the default validate_schema method (from the base class).
-         a new "validate_schema" method can be supplied if needed to replace
-         the default one.
+        object (dict). If initialized it will automatically trigger schema
+        validation for the provider. Schema validation will be performed
+        using the default validate_schema method (from the base class).
+        a new "validate_schema" method can be supplied if needed to replace
+        the default one.
 
         :param dict provider_config: inherits the config yaml from the cli
         :param bool is_verbose_output: self explanatory
@@ -158,9 +161,10 @@ class ProviderManager(BaseProviderClass):
         provisions resources for the management server
 
         returns a tuple with the machine's public and private ip's,
-         the ssh key and user configured in the config yaml and
-         the prorivder's context (a dict containing the privisioned
-         resources to be used during teardown)
+        the ssh key and user configured in the config yaml and
+        the prorivder's context (a dict containing the privisioned
+        resources to be used during teardown)
+
         the tuple's order should correspond with the above order.
 
         :rtype: 'tuple' with machine context.
@@ -174,15 +178,15 @@ class ProviderManager(BaseProviderClass):
     def validate(self, validation_errors={}):
         """
         validations to be performed before provisioning and bootstrapping
-         the management server.
+        the management server.
 
         returns a dict of lists of validation errors. each list corresponds
-         with a logical section of the validations (e.g, compute, networking..)
+        with a logical section of the validations (e.g, compute, networking..)
 
-        ..note: provisioning will continue only if the returned dict is empty.
+        Note: provisioning will continue only if the returned dict is empty.
 
-        :param dict schema: a schema dict to validate the provider config
-         against
+        :param dict validation_errors: a dict to append the validation errors
+         to.
         :rtype: 'dict' of validation_errors.
         """
         # get openstack clients
