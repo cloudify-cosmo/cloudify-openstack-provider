@@ -72,9 +72,9 @@ cloudify:
             max_workers: 5
             remote_execution_port: 22
             #user: (no default - optional parameter)
-        workflows:
-            task_retries: -1  # -1 means we retry forever
-            retry_interval: 30
+    workflows:
+        task_retries: -1  # -1 means we retry forever
+        retry_interval: 30
 
 #this section only applies to bootstrapping in --dev-mode
 dev:
