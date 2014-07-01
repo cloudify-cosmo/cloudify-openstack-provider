@@ -67,7 +67,6 @@ cloudify:
     agents:
         packages:
             ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/ubuntu-agent_amd64.deb
-            centos_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/centos-agent_amd64.deb
         config:
             min_workers: 2
             max_workers: 5
