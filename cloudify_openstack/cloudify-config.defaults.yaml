@@ -80,8 +80,8 @@ cloudify:
             initial_connectivity_check_timeout: 120
             command_retries: 3
             retries_interval: 3
-            connection_attempts: 5
-            connection_timeout: 10
+            connection_attempts: 1
+            socket_timeout: 10
 
 #this section only applies to bootstrapping in --dev-mode
 dev:

@@ -126,6 +126,6 @@ keystone:
 #            # wait time (in seconds) in between the aforementioned retries
 #            retries_interval: 3
 #            # number of SSH connection attempts (in a single retry)
-#            connection_attempts: 5
-#            # timeout (in seconds) for the SSH connection (in a single retry)
-#            connection_timeout: 10
+#            connection_attempts: 1
+#            # timeout (in seconds) for an SSH connection
+#            socket_timeout: 10
