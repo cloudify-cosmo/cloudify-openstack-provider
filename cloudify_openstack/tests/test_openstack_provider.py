@@ -18,15 +18,12 @@ __author__ = 'barakm'
 
 import unittest
 import os
-import tempfile
 import cloudify_openstack.cloudify_openstack
-
-TEST_DIR = tempfile.mkdtemp(".test", "openstack_provider")
-TEST_WORK_DIR = TEST_DIR + "/cloudify"
-THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 class OpenStackProviderTest(unittest.TestCase):
+
+    # Overrides from environment
 
     def test_override_username_from_env(self):
         provider_config = {}
@@ -100,9 +97,10 @@ class OpenStackProviderTest(unittest.TestCase):
 
     def test_no_keystone_and_no_env(self):
         provider_config = {}
+        self._clear_openstack_environment()
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
-        self.assertFalse('keystone' in provider_config)
+        self.assertNotIn('keystone', provider_config)
 
     def test_no_keystone_with_env(self):
         provider_config = {}
@@ -110,7 +108,7 @@ class OpenStackProviderTest(unittest.TestCase):
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
-        self.assertTrue('keystone' in provider_config)
+        self.assertIn('keystone', provider_config)
         self.assertEqual(os.environ["OS_USERNAME"],
                          provider_config['keystone']['username'])
 
@@ -126,6 +124,7 @@ class OpenStackProviderTest(unittest.TestCase):
         provider_config['keystone']['auth_url'] = \
             'Enter-Openstack-Auth-Url-Here'
 
+        self._clear_openstack_environment()
         os.environ["OS_USERNAME"] = "MODIFIED_NAME"
         os.environ["OS_PASSWORD"] = "MODIFIED_PASSWORD"
         os.environ["OS_TENANT_NAME"] = "MODIFIED_TENANT"
@@ -133,7 +132,7 @@ class OpenStackProviderTest(unittest.TestCase):
 
         cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
                                                               False)
-        self.assertTrue('keystone' in provider_config)
+        self.assertIn('keystone', provider_config)
         self.assertEqual(provider_config["keystone"]["username"],
                          "MODIFIED_NAME")
         self.assertEqual(provider_config["keystone"]["password"],
@@ -142,3 +141,22 @@ class OpenStackProviderTest(unittest.TestCase):
                          "MODIFIED_TENANT")
         self.assertEqual(provider_config["keystone"]["auth_url"],
                          "MODIFIED_URL")
+
+    # Prefixing
+
+    def test_prefix_non_existing(self):
+        """ Just see that there is no exception thrown """
+        provider_config = {
+            'resources_prefix': 'p1',
+            'prefix_all_resources_random': True,
+        }
+        cloudify_openstack.cloudify_openstack.ProviderManager(provider_config,
+                                                              False)
+
+    # Utilities
+
+    def _clear_openstack_environment(self):
+        env = os.environ
+        vars_to_remove = [k for k in env if k.startswith('OS_')]
+        for k in vars_to_remove:
+            del env[k]
