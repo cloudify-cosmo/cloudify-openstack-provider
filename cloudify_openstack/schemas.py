@@ -63,7 +63,7 @@ PROVIDER_CONFIG_SCHEMA = {
                                 "connection_attempts": {
                                     "type": "number"
                                 },
-                                "connection_timeout": {
+                                "socket_timeout": {
                                     "type": "number"
                                 }
                             },
