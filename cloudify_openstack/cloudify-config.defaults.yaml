@@ -35,6 +35,7 @@ compute:
         #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
         user_on_management: ubuntu
         userhome_on_management: /home/ubuntu
+        creation_timeout: 300
         instance:
             create_if_missing: true
             name: cloudify-management-server
@@ -73,6 +74,15 @@ cloudify:
     workflows:
         task_retries: -1  # -1 == retry forever
         retry_interval: 30
+
+    bootstrap:
+        ssh:
+            initial_connectivity_retries: 25
+            initial_connectivity_retries_interval: 5
+            command_retries: 3
+            retries_interval: 3
+            connection_attempts: 1
+            socket_timeout: 10
 
 #this section only applies to bootstrapping in --dev-mode
 dev:

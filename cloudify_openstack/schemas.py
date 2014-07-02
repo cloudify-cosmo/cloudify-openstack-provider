@@ -44,6 +44,36 @@ PROVIDER_CONFIG_SCHEMA = {
                 },
                 "cloudify_packages_path": {
                     "type": "string",
+                },
+                "bootstrap": {
+                    "type": "object",
+                    "properties": {
+                        "ssh": {
+                            "type": "object",
+                            "properties": {
+                                "initial_connectivity_retries": {
+                                    "type": "number"
+                                },
+                                "initial_connectivity_retries_interval": {
+                                    "type": "number"
+                                },
+                                "command_retries": {
+                                    "type": "number"
+                                },
+                                "retries_interval": {
+                                    "type": "number"
+                                },
+                                "connection_attempts": {
+                                    "type": "number"
+                                },
+                                "socket_timeout": {
+                                    "type": "number"
+                                }
+                            },
+                            "additionalProperties": False
+                        }
+                    },
+                    "additionalProperties": False
                 }
             }
         },
@@ -123,6 +153,9 @@ PROVIDER_CONFIG_SCHEMA = {
                         },
                         "userhome_on_management": {
                             "type": "string",
+                        },
+                        "creation_timeout": {
+                            "type": "number",
                         }
                     }
                 },
