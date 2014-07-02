@@ -1628,7 +1628,7 @@ class OpenStackServerController(BaseControllerNova):
         params['key_name'] = management_server_keypair_name
 
         server = self.nova_client.servers.create(**params)
-        server = self._wait_for_server_to_become_active(server_name, server,
+        server = self._wait_for_server_to_become_active(server,
                                                         creation_timeout)
         return server.id
 
@@ -1669,11 +1669,11 @@ class OpenStackServerController(BaseControllerNova):
                 " network {2}".format(server.name, server_id, network_name))
         return server.networks[network_name]
 
-    def _wait_for_server_to_become_active(self, server_name, server,
-                                          creation_timeout):
+    def _wait_for_server_to_become_active(self, server, creation_timeout):
+        time_left = creation_timeout
         while server.status != "ACTIVE":
-            creation_timeout -= 5
-            if creation_timeout <= 0:
+            time_left -= 5
+            if time_left <= 0:
                 raise RuntimeError('Server failed to start in time (creation '
                                    'timeout was {} seconds)'
                                    .format(creation_timeout))
