@@ -51,7 +51,10 @@ PROVIDER_CONFIG_SCHEMA = {
                         "ssh": {
                             "type": "object",
                             "properties": {
-                                "initial_connectivity_check_timeout": {
+                                "initial_connectivity_retries": {
+                                    "type": "number"
+                                },
+                                "initial_connectivity_retries_interval": {
                                     "type": "number"
                                 },
                                 "command_retries": {

@@ -77,7 +77,8 @@ cloudify:
 
     bootstrap:
         ssh:
-            initial_connectivity_check_timeout: 120
+            initial_connectivity_retries: 25
+            initial_connectivity_retries_interval: 5
             command_retries: 3
             retries_interval: 3
             connection_attempts: 1

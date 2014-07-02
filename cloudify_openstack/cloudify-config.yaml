@@ -119,8 +119,10 @@ keystone:
 #            retry_interval: 30
 #    bootstrap:
 #        ssh:
-#            # timeout (in seconds) for the initial connectivity check with the management server
-#            initial_connectivity_check_timeout: 120
+#            # number of retries for the initial connectivity check with the management server
+#            initial_connectivity_retries: 25
+#            # wait time (in seconds) in between the aforementioned retries
+#            initial_connectivity_retries_interval: 5
 #            # number of retries for bootstrap commands run via SSH
 #            command_retries: 3
 #            # wait time (in seconds) in between the aforementioned retries
