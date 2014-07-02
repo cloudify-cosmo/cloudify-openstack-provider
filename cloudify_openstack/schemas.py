@@ -44,6 +44,33 @@ PROVIDER_CONFIG_SCHEMA = {
                 },
                 "cloudify_packages_path": {
                     "type": "string",
+                },
+                "bootstrap": {
+                    "type": "object",
+                    "properties": {
+                        "ssh": {
+                            "type": "object",
+                            "properties": {
+                                "initial_connectivity_check_timeout": {
+                                    "type": "number"
+                                },
+                                "command_retries": {
+                                    "type": "number"
+                                },
+                                "retries_interval": {
+                                    "type": "number"
+                                },
+                                "connection_attempts": {
+                                    "type": "number"
+                                },
+                                "connection_timeout": {
+                                    "type": "number"
+                                }
+                            },
+                            "additionalProperties": False
+                        }
+                    },
+                    "additionalProperties": False
                 }
             }
         },

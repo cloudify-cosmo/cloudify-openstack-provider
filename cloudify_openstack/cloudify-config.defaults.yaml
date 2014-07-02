@@ -75,6 +75,14 @@ cloudify:
         task_retries: -1  # -1 == retry forever
         retry_interval: 30
 
+    bootstrap:
+        ssh:
+            initial_connectivity_check_timeout: 120
+            command_retries: 3
+            retries_interval: 3
+            connection_attempts: 5
+            connection_timeout: 10
+
 #this section only applies to bootstrapping in --dev-mode
 dev:
     #each section here is identified with one virtual environment

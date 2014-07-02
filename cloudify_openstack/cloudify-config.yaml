@@ -17,7 +17,7 @@ keystone:
     auth_url: Enter-Openstack-Auth-Url-Here
 
 
-# Network configuration
+# # Network configuration
 #######################
 #
 #networking:
@@ -52,7 +52,7 @@ keystone:
 #        name: cloudify-sg-management
 #        cidr: 0.0.0.0/0
 #
-#  Compute Configuration
+# # Compute Configuration
 ########################
 #compute:
 #    # The region where resources will be provisioned. Defaults to RegionOne.
@@ -64,7 +64,7 @@ keystone:
 #        user_on_management: ubuntu
 #        # Home directory of management user
 #        userhome_on_management: /home/ubuntu
-#        # Timeout (in seconds) for provisioning for the management machine.
+#        # Timeout (in seconds) for provisioning of the management machine.
 #        creation_timeout: 300
 #        # Details of the management machine
 #        instance:
@@ -97,7 +97,7 @@ keystone:
 #            auto_generated:
 #                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
 #
-# Cloudify Installation Configuration
+# # Cloudify Installation Configuration
 ##################################
 #cloudify:
 #    cloudify_components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
@@ -113,3 +113,15 @@ keystone:
 #    workflows:
 #            task_retries: -1  # -1 means we retry forever
 #            retry_interval: 30
+#    bootstrap:
+#        ssh:
+#            # timeout (in seconds) for the initial connectivity check with the management server
+#            initial_connectivity_check_timeout: 120
+#            # number of retries for bootstrap commands run via SSH
+#            command_retries: 3
+#            # wait time (in seconds) in between the aforementioned retries
+#            retries_interval: 3
+#            # number of SSH connection attempts (in a single retry)
+#            connection_attempts: 5
+#            # timeout (in seconds) for the SSH connection (in a single retry)
+#            connection_timeout: 10

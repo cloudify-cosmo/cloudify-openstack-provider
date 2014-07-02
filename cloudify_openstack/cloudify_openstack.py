@@ -172,8 +172,14 @@ class ProviderManager(BaseProviderClass):
         driver = self._get_driver(self.provider_config)
         public_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
-        driver.copy_files_to_manager(public_ip, ssh_key, ssh_user)
         return public_ip, private_ip, ssh_key, ssh_user, provider_context
+
+    def bootstrap(self, mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user,
+                  dev_mode=False):
+        driver = self._get_driver(self.provider_config)
+        driver.copy_files_to_manager(mgmt_ip, mgmt_ssh_key, mgmt_ssh_user)
+        return super(ProviderManager, self).bootstrap(
+            mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user, dev_mode)
 
     def validate(self, validation_errors={}):
         """
@@ -619,16 +625,17 @@ class CosmoOnOpenStackDriver(object):
         def _copy(userhome_on_management,
                   keystone_config, agents_key_path,
                   networking):
+            ssh_config = self.config['cloudify']['bootstrap']['ssh']
 
             env.user = ssh_user
             env.key_filename = ssh_key
             env.abort_on_prompts = False
-            env.connection_attempts = 12
+            env.connection_attempts = ssh_config['connection_attempts']
             env.keepalive = 0
             env.linewise = False
             env.pool_size = 0
             env.skip_bad_hosts = False
-            env.timeout = 5
+            env.timeout = ssh_config['connection_timeout']
             env.forward_agent = True
             env.status = False
             env.disable_known_hosts = False
