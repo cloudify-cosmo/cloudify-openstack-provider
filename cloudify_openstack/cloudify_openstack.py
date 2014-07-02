@@ -208,7 +208,7 @@ class ProviderManager(BaseProviderClass):
         driver.copy_files_to_manager(mgmt_ip, mgmt_ssh_key, mgmt_ssh_user)
         return super(ProviderManager, self).bootstrap(
             mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user, dev_mode)
-    
+
     def validate(self):
         """
         validations to be performed before provisioning and bootstrapping
