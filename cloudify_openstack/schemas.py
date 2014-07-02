@@ -152,7 +152,7 @@ PROVIDER_CONFIG_SCHEMA = {
                             "type": "string",
                         },
                         "creation_timeout": {
-                            "type": "string",
+                            "type": "number",
                         }
                     }
                 },
