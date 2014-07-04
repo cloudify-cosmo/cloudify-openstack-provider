@@ -79,23 +79,14 @@ keystone:
 #        management_keypair:
 #            create_if_missing: true
 #            name: cloudify-management-kp
-#            # Uncomment the below and set the file paths to use an existing key pair.
-#            #provided:
-#                #public_key_filepath: [PUBLIC-KEY-PATH]
-#                #private_key_filepath: [PRIVATE-KEY-PATH]
-#            auto_generated:
-#                # Local file path where generated private key will be saved
-#                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+#            # Local file path where existing key is stored or where generated private key will be saved
+#            private_key_path: ~/.ssh/cloudify-management-kp.pem
 #    # Agent configuration
 #    agent_servers:
 #        agents_keypair:
 #            create_if_missing: true
 #            name: cloudify-agents-kp
-#            #provided:
-#                #public_key_filepath: [PUBLIC-KEY-PATH]
-#                #private_key_filepath: [PRIVATE-KEY-PATH]
-#            auto_generated:
-#                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
+#            private_key_path: ~/.ssh/cloudify-agents-kp.pem
 #
 # # Cloudify Installation Configuration
 ##################################

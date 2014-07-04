@@ -91,13 +91,8 @@ PROVIDER_CONFIG_SCHEMA = {
                         "agents_keypair": {
                             "type": "object",
                             "properties": {
-                                "auto_generated": {
-                                    "type": "object",
-                                    "properties": {
-                                        "private_key_target_path": {
-                                            "type": "string",
-                                        }
-                                    }
+                                "private_key_path": {
+                                    "type": "string",
                                 },
                                 "externally_provisioned": {
                                     "enum": [True, False],
@@ -132,13 +127,8 @@ PROVIDER_CONFIG_SCHEMA = {
                         "management_keypair": {
                             "type": "object",
                             "properties": {
-                                "auto_generated": {
-                                    "type": "object",
-                                    "properties": {
-                                        "private_key_target_path": {
-                                            "type": "string",
-                                        }
-                                    }
+                                "private_key_path": {
+                                    "type": "string",
                                 },
                                 "externally_provisioned": {
                                     "enum": [True, False],

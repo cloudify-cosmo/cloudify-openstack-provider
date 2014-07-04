@@ -112,18 +112,9 @@ class ProviderManager(BaseProviderClass):
     )
 
     CONFIG_FILES_PATHS_TO_MODIFY = (
-        ('compute', 'agent_servers', 'agents_keypair',
-            'auto_generated', 'private_key_target_path'),
-        ('compute', 'agent_servers', 'agents_keypair',
-            'provided', 'private_key_filepath'),
-        ('compute', 'agent_servers', 'agents_keypair',
-            'provided', 'public_key_filepath'),
+        ('compute', 'agent_servers', 'private_key_path'),
         ('compute', 'management_server', 'management_keypair',
-            'auto_generated', 'private_key_target_path'),
-        ('compute', 'management_server', 'management_keypair',
-            'provided', 'private_key_filepath'),
-        ('compute', 'management_server', 'management_keypair',
-            'provided', 'public_key_filepath'),
+            'private_key_path'),
     )
 
     def __init__(self, provider_config, is_verbose_output):
@@ -302,31 +293,25 @@ class ProviderManager(BaseProviderClass):
             mgmt_server_config['instance']['flavor'])
         if platform.system() in linuxd:
             if verifier.check_key_exists(
-                mgmt_keypair_config['auto_generated']
-                                   ['private_key_target_path']):
+                mgmt_keypair_config['private_key_path']):
                 verifier.validate_key_perms(
                     'compute.management_server.management_keypair'
-                    '.auto_generated.private_key_target_path',
-                    mgmt_keypair_config['auto_generated']
-                                       ['private_key_target_path'])
+                    '.private_key_path',
+                    mgmt_keypair_config['private_key_path'])
                 verifier.validate_path_owner(
                     'compute.management_server.management_keypair'
-                    '.auto_generated.private_key_target_path',
-                    mgmt_keypair_config['auto_generated']
-                                       ['private_key_target_path'])
+                    '.private_key_path',
+                    mgmt_keypair_config['private_key_path'])
             if verifier.check_key_exists(
-                agent_keypair_config['auto_generated']
-                                    ['private_key_target_path']):
+                agent_keypair_config['private_key_path']):
                 verifier.validate_key_perms(
                     'compute.agent_servers.agents_keypair'
-                    '.auto_generated.private_key_target_path',
-                    agent_keypair_config['auto_generated']
-                                        ['private_key_target_path'])
+                    '.private_key_path',
+                    agent_keypair_config['private_key_path'])
                 verifier.validate_path_owner(
                     'compute.agent_servers.agents_keypair'
-                    '.auto_generated.private_key_target_path',
-                    agent_keypair_config['auto_generated']
-                                        ['private_key_target_path'])
+                    '.private_key_path',
+                    agent_keypair_config['private_key_path'])
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
@@ -699,12 +684,6 @@ class CosmoOnOpenStackDriver(object):
                 'url': networking['neutron_url']
             })
 
-        def _get_private_key_path_from_keypair_config(keypair_config):
-            path = keypair_config['provided']['private_key_filepath'] if \
-                'provided' in keypair_config else \
-                keypair_config['auto_generated']['private_key_target_path']
-            return expanduser(path)
-
         compute_config = self.config['compute']
         mgmt_server_config = compute_config['management_server']
 
@@ -712,8 +691,8 @@ class CosmoOnOpenStackDriver(object):
             _copy(
                 mgmt_server_config['userhome_on_management'],
                 self.config['keystone'],
-                _get_private_key_path_from_keypair_config(
-                    compute_config['agent_servers']['agents_keypair']),
+                expanduser(compute_config['agent_servers']['agents_keypair'][
+                    'private_key_path']),
                 self.config['networking'],
                 self.config.get('cloudify', {}))
 
@@ -814,12 +793,7 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'management_keypair',
             False,
-            private_key_target_path=mgr_kpconf['auto_generated']
-                                              ['private_key_target_path'] if
-            'auto_generated' in mgr_kpconf else None,
-            public_key_filepath=mgr_kpconf['provided']
-                                          ['public_key_filepath'] if
-            'provided' in mgr_kpconf else None
+            private_key_path=mgr_kpconf['private_key_path']
         )
 
         agents_kpconf = compute_config['agent_servers']['agents_keypair']
@@ -829,12 +803,7 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'agents_keypair',
             False,
-            private_key_target_path=agents_kpconf['auto_generated']
-            ['private_key_target_path'] if 'auto_generated' in
-                                           agents_kpconf else None,
-            public_key_filepath=agents_kpconf['provided']
-                                             ['public_key_filepath'] if
-            'provided' in agents_kpconf else None
+            private_key_path=agents_kpconf['private_key_path']
         )
 
         server_id = self.server_controller.\
@@ -1529,22 +1498,13 @@ class OpenStackKeypairController(BaseControllerNova):
         return [{'id': keypair.id} for keypair in keypairs if
                 keypair.id == name]
 
-    def create(self, key_name, private_key_target_path=None,
-               public_key_filepath=None, *args, **kwargs):
-        if not private_key_target_path and not public_key_filepath:
-            raise RuntimeError("Must provide either private key target path "
-                               "or public key filepath to create keypair")
-
-        if public_key_filepath:
-            with open(expanduser(public_key_filepath), 'r') as f:
-                keypair = self.nova_client.keypairs.create(key_name, f.read())
-        else:
-            keypair = self.nova_client.keypairs.create(key_name)
-            pk_target_path = expanduser(private_key_target_path)
-            self._mkdir_p(os.path.dirname(private_key_target_path))
-            with open(pk_target_path, 'w') as f:
-                f.write(keypair.private_key)
-                os.system('chmod 600 {0}'.format(pk_target_path))
+    def create(self, key_name, private_key_path, *args, **kwargs):
+        keypair = self.nova_client.keypairs.create(key_name)
+        pk_target_path = expanduser(private_key_path)
+        self._mkdir_p(os.path.dirname(private_key_path))
+        with open(pk_target_path, 'w') as f:
+            f.write(keypair.private_key)
+            os.system('chmod 600 {0}'.format(pk_target_path))
         return keypair.id
 
     def get_by_id(self, id):

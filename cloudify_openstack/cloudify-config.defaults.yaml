@@ -44,20 +44,12 @@ compute:
         management_keypair:
             create_if_missing: true
             name: cloudify-management-kp
-            #provided:
-                #public_key_filepath: [PUBLIC-KEY-PATH]
-                #private_key_filepath: [PRIVATE-KEY-PATH]
-            auto_generated:
-                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+            private_key_path: ~/.ssh/cloudify-management-kp.pem
     agent_servers:
         agents_keypair:
             create_if_missing: true
             name: cloudify-agents-kp
-            #provided:
-                #public_key_filepath: [PUBLIC-KEY-PATH]
-                #private_key_filepath: [PRIVATE-KEY-PATH]
-            auto_generated:
-                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
+            private_key_path: ~/.ssh/cloudify-agents-kp.pem
 
 cloudify:
     cloudify_components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
