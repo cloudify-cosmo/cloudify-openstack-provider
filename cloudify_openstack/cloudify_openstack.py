@@ -293,7 +293,7 @@ class ProviderManager(BaseProviderClass):
             mgmt_server_config['instance']['flavor'])
         if platform.system() in linuxd:
             if verifier.check_key_exists(
-                mgmt_keypair_config['private_key_path']):
+                    mgmt_keypair_config['private_key_path']):
                 verifier.validate_key_perms(
                     'compute.management_server.management_keypair'
                     '.private_key_path',
@@ -303,7 +303,7 @@ class ProviderManager(BaseProviderClass):
                     '.private_key_path',
                     mgmt_keypair_config['private_key_path'])
             if verifier.check_key_exists(
-                agent_keypair_config['private_key_path']):
+                    agent_keypair_config['private_key_path']):
                 verifier.validate_key_perms(
                     'compute.agent_servers.agents_keypair'
                     '.private_key_path',
