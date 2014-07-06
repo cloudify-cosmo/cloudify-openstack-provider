@@ -35,6 +35,9 @@ PROVIDER_CONFIG_SCHEMA = {
                 'bootstrap'
             ],
             "properties": {
+                "resources_prefix": {
+                    "type": "string"
+                },
                 "cloudify_components_package_url": {
                     "type": "string",
                 },
