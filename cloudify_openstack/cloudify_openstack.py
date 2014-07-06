@@ -501,7 +501,7 @@ class OpenStackValidator:
                 err = ('config file validation error originating at key: {0}, '
                        '{1} {2} cannot be created due'
                        ' to quota limitations.'
-                       ' privisioned {3}s: {4}, quota: {5}'
+                       ' provisioned {3}s: {4}, quota: {5}'
                        .format(field, resource_type, resource_config['name'],
                                resource_type, resource_amount,
                                resource_quota))
@@ -658,7 +658,10 @@ class OpenStackValidator:
                 return False
             elif not keypair_config[CREATE_IF_MISSING]:
                 err = 'config file validation error originating at key: {0}, '\
-                      "keypair {1} doesn't exist on Openstack"\
+                      'keypair {1} does not exist in the pool but is marked '\
+                      'as create_if_missing = False. please provide an '\
+                      'existing resource name or change create_if_missing = '\
+                      'True to automatically create a new resource.'\
                       .format(keypair_config_path, keypair_config['name'])
                 lgr.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('compute', []).append(err)
