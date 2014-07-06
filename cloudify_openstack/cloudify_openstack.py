@@ -291,27 +291,34 @@ class ProviderManager(BaseProviderClass):
         verifier.validate_flavor_exists(
             'compute.management_server.instance.flavor',
             mgmt_server_config['instance']['flavor'])
+
+        verifier.validate_keypair_configuration(
+            mgmt_keypair_config,
+            'compute.management_server.management_keypair')
+
+        verifier.validate_keypair_configuration(
+            agent_keypair_config,
+            'compute.agent_servers.agents_keypair')
+
         if platform.system() in linuxd:
-            if verifier.check_key_exists(
-                    mgmt_keypair_config['private_key_path']):
-                verifier.validate_key_perms(
-                    'compute.management_server.management_keypair'
-                    '.private_key_path',
-                    mgmt_keypair_config['private_key_path'])
-                verifier.validate_path_owner(
-                    'compute.management_server.management_keypair'
-                    '.private_key_path',
-                    mgmt_keypair_config['private_key_path'])
-            if verifier.check_key_exists(
-                    agent_keypair_config['private_key_path']):
-                verifier.validate_key_perms(
-                    'compute.agent_servers.agents_keypair'
-                    '.private_key_path',
-                    agent_keypair_config['private_key_path'])
-                verifier.validate_path_owner(
-                    'compute.agent_servers.agents_keypair'
-                    '.private_key_path',
-                    agent_keypair_config['private_key_path'])
+            def validate_local_keyfile_properties(keypair_config,
+                                                  keypair_config_path):
+                if verifier.check_key_exists_locally(
+                        keypair_config['private_key_path']):
+                    field = '{0}.private_key_path'.format(keypair_config_path)
+
+                    verifier.validate_key_local_perms(
+                        field, keypair_config['private_key_path'])
+                    verifier.validate_path_owner(
+                        field, keypair_config['private_key_path'])
+
+            validate_local_keyfile_properties(
+                mgmt_keypair_config,
+                'compute.management_server.management_keypair')
+
+            validate_local_keyfile_properties(
+                agent_keypair_config,
+                'compute.agent_servers.agents_keypair')
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
@@ -553,13 +560,17 @@ class OpenStackValidator:
         self.validation_errors.setdefault('compute', []).append(err)
         return False
 
-    def check_key_exists(self, key_path):
+    def check_key_exists_locally(self, key_path):
         # lgr.debug('checking whether key {0} exists'
         #           .format(key_path))
         key_path = expanduser(key_path)
         return os.path.isfile(key_path)
 
-    def validate_key_perms(self, field, key_path):
+    def _check_key_exists_on_openstack(self, key_name):
+        keypairs = self.nova_client.keypairs.list()
+        return len(filter(lambda kp: kp.id == key_name, keypairs)) > 0
+
+    def validate_key_local_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         key_path = expanduser(key_path)
@@ -568,7 +579,7 @@ class OpenStackValidator:
                    'ssh key {1} is not readable and/or writeable'.format(
                        field, key_path))
             lgr.error('VALIDATION ERROR:' + err)
-            self.validation_errors.setdefault('copmute', []).append(err)
+            self.validation_errors.setdefault('compute', []).append(err)
             return False
         lgr.debug('OK:'
                   'ssh key {0} has the correct permissions'.format(key_path))
@@ -608,6 +619,53 @@ class OpenStackValidator:
             return False
         lgr.debug('OK:'
                   '{0} is owned by the current user'.format(path))
+        return True
+
+    def validate_keypair_configuration(self, keypair_config,
+                                       keypair_config_path):
+        # a keypair configuration is valid if the key already exists on both
+        # Openstack and locally, or if it doesn't exist on either and
+        # 'create_if_missing' is set to True
+
+        keypair_type = keypair_config_path.split('.')[-1]
+        lgr.debug('checking whether {0} configuration is valid'.format(
+            keypair_type))
+
+        does_key_exist_on_openstack = \
+            self._check_key_exists_on_openstack(keypair_config['name'])
+        does_key_exist_locally = self.check_key_exists_locally(
+            keypair_config['private_key_path'])
+
+        if does_key_exist_on_openstack:
+            if not does_key_exist_locally:
+                err = 'config file validation error originating at key: {0}, '\
+                      'keypair {1} exists on Openstack, but there is no ' \
+                      'private key file at {2}'\
+                      .format(keypair_config_path, keypair_config['name'],
+                              keypair_config['private_key_path'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+        else:
+            if keypair_config[CREATE_IF_MISSING] and does_key_exist_locally:
+                err = 'config file validation error originating at key: {0}, '\
+                      "can't create keypair {1} because private key target " \
+                      "path {2} already exists"\
+                      .format(keypair_config_path, keypair_config['name'],
+                              keypair_config['private_key_path'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+            elif not keypair_config[CREATE_IF_MISSING]:
+                err = 'config file validation error originating at key: {0}, '\
+                      "keypair {1} doesn't exist on Openstack"\
+                      .format(keypair_config_path, keypair_config['name'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+
+        lgr.debug(
+            'OK: keypair {0} configuration is valid'.format(keypair_type))
         return True
 
 
@@ -1163,11 +1221,10 @@ class BaseController(object):
             the_id = self.ensure_exists(name, *args, **kw)
             created = False
         else:
-            if not provider_config.get(CREATE_IF_MISSING, True):
+            if not provider_config[CREATE_IF_MISSING]:
                 raise OpenStackLogicError("{0} '{1}' does not exist but "
-                                          "create_if_missing is false or "
-                                          "absent.".format(self.__class__.WHAT,
-                                                           name))
+                                          "create_if_missing is false"
+                                          .format(self.__class__.WHAT, name))
             the_id = self._create(name, *args, **kw)
             created = True
         return the_id, created
@@ -1499,8 +1556,13 @@ class OpenStackKeypairController(BaseControllerNova):
                 keypair.id == name]
 
     def create(self, key_name, private_key_path, *args, **kwargs):
-        keypair = self.nova_client.keypairs.create(key_name)
         pk_target_path = expanduser(private_key_path)
+        if os.path.exists(pk_target_path):
+            raise RuntimeError("Can't create keypair {0} - local path for "
+                               "private key already exists: {1}"
+                               .format(key_name, pk_target_path))
+
+        keypair = self.nova_client.keypairs.create(key_name)
         self._mkdir_p(os.path.dirname(private_key_path))
         with open(pk_target_path, 'w') as f:
             f.write(keypair.private_key)
