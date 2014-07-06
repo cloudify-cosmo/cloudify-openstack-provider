@@ -899,8 +899,7 @@ class CosmoOnOpenStackDriver(object):
         ips = self.server_controller.get_server_ips_in_network(server_id,
                                                                network_name)
         private_ip, public_ip = ips[:2]
-        ssh_key = mgr_kpconf['auto_generated']['private_key_target_path'] \
-            if 'auto_generated' in mgr_kpconf else None
+        ssh_key = expanduser(mgr_kpconf['private_key_path'])
         ssh_user = compute_config['management_server']['user_on_management']
         return public_ip, private_ip, ssh_key, ssh_user, self.provider_context
 
@@ -1566,7 +1565,7 @@ class OpenStackKeypairController(BaseControllerNova):
                                .format(key_name, pk_target_path))
 
         keypair = self.nova_client.keypairs.create(key_name)
-        self._mkdir_p(os.path.dirname(private_key_path))
+        self._mkdir_p(os.path.dirname(pk_target_path))
         with open(pk_target_path, 'w') as f:
             f.write(keypair.private_key)
             os.system('chmod 600 {0}'.format(pk_target_path))
