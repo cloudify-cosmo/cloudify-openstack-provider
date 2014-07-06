@@ -112,18 +112,9 @@ class ProviderManager(BaseProviderClass):
     )
 
     CONFIG_FILES_PATHS_TO_MODIFY = (
-        ('compute', 'agent_servers', 'agents_keypair',
-            'auto_generated', 'private_key_target_path'),
-        ('compute', 'agent_servers', 'agents_keypair',
-            'provided', 'private_key_filepath'),
-        ('compute', 'agent_servers', 'agents_keypair',
-            'provided', 'public_key_filepath'),
+        ('compute', 'agent_servers', 'private_key_path'),
         ('compute', 'management_server', 'management_keypair',
-            'auto_generated', 'private_key_target_path'),
-        ('compute', 'management_server', 'management_keypair',
-            'provided', 'private_key_filepath'),
-        ('compute', 'management_server', 'management_keypair',
-            'provided', 'public_key_filepath'),
+            'private_key_path'),
     )
 
     def __init__(self, provider_config, is_verbose_output):
@@ -300,33 +291,34 @@ class ProviderManager(BaseProviderClass):
         verifier.validate_flavor_exists(
             'compute.management_server.instance.flavor',
             mgmt_server_config['instance']['flavor'])
+
+        verifier.validate_keypair_configuration(
+            mgmt_keypair_config,
+            'compute.management_server.management_keypair')
+
+        verifier.validate_keypair_configuration(
+            agent_keypair_config,
+            'compute.agent_servers.agents_keypair')
+
         if platform.system() in linuxd:
-            if verifier.check_key_exists(
-                mgmt_keypair_config['auto_generated']
-                                   ['private_key_target_path']):
-                verifier.validate_key_perms(
-                    'compute.management_server.management_keypair'
-                    '.auto_generated.private_key_target_path',
-                    mgmt_keypair_config['auto_generated']
-                                       ['private_key_target_path'])
-                verifier.validate_path_owner(
-                    'compute.management_server.management_keypair'
-                    '.auto_generated.private_key_target_path',
-                    mgmt_keypair_config['auto_generated']
-                                       ['private_key_target_path'])
-            if verifier.check_key_exists(
-                agent_keypair_config['auto_generated']
-                                    ['private_key_target_path']):
-                verifier.validate_key_perms(
-                    'compute.agent_servers.agents_keypair'
-                    '.auto_generated.private_key_target_path',
-                    agent_keypair_config['auto_generated']
-                                        ['private_key_target_path'])
-                verifier.validate_path_owner(
-                    'compute.agent_servers.agents_keypair'
-                    '.auto_generated.private_key_target_path',
-                    agent_keypair_config['auto_generated']
-                                        ['private_key_target_path'])
+            def validate_local_keyfile_properties(keypair_config,
+                                                  keypair_config_path):
+                if verifier.check_key_exists_locally(
+                        keypair_config['private_key_path']):
+                    field = '{0}.private_key_path'.format(keypair_config_path)
+
+                    verifier.validate_key_local_perms(
+                        field, keypair_config['private_key_path'])
+                    verifier.validate_path_owner(
+                        field, keypair_config['private_key_path'])
+
+            validate_local_keyfile_properties(
+                mgmt_keypair_config,
+                'compute.management_server.management_keypair')
+
+            validate_local_keyfile_properties(
+                agent_keypair_config,
+                'compute.agent_servers.agents_keypair')
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
@@ -509,7 +501,7 @@ class OpenStackValidator:
                 err = ('config file validation error originating at key: {0}, '
                        '{1} {2} cannot be created due'
                        ' to quota limitations.'
-                       ' privisioned {3}s: {4}, quota: {5}'
+                       ' provisioned {3}s: {4}, quota: {5}'
                        .format(field, resource_type, resource_config['name'],
                                resource_type, resource_amount,
                                resource_quota))
@@ -568,13 +560,17 @@ class OpenStackValidator:
         self.validation_errors.setdefault('compute', []).append(err)
         return False
 
-    def check_key_exists(self, key_path):
+    def check_key_exists_locally(self, key_path):
         # lgr.debug('checking whether key {0} exists'
         #           .format(key_path))
         key_path = expanduser(key_path)
         return os.path.isfile(key_path)
 
-    def validate_key_perms(self, field, key_path):
+    def _check_key_exists_on_openstack(self, key_name):
+        keypairs = self.nova_client.keypairs.list()
+        return len(filter(lambda kp: kp.id == key_name, keypairs)) > 0
+
+    def validate_key_local_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         key_path = expanduser(key_path)
@@ -583,7 +579,7 @@ class OpenStackValidator:
                    'ssh key {1} is not readable and/or writeable'.format(
                        field, key_path))
             lgr.error('VALIDATION ERROR:' + err)
-            self.validation_errors.setdefault('copmute', []).append(err)
+            self.validation_errors.setdefault('compute', []).append(err)
             return False
         lgr.debug('OK:'
                   'ssh key {0} has the correct permissions'.format(key_path))
@@ -623,6 +619,56 @@ class OpenStackValidator:
             return False
         lgr.debug('OK:'
                   '{0} is owned by the current user'.format(path))
+        return True
+
+    def validate_keypair_configuration(self, keypair_config,
+                                       keypair_config_path):
+        # a keypair configuration is valid if the key already exists on both
+        # Openstack and locally, or if it doesn't exist on either and
+        # 'create_if_missing' is set to True
+
+        keypair_type = keypair_config_path.split('.')[-1]
+        lgr.debug('checking whether {0} configuration is valid'.format(
+            keypair_type))
+
+        does_key_exist_on_openstack = \
+            self._check_key_exists_on_openstack(keypair_config['name'])
+        does_key_exist_locally = self.check_key_exists_locally(
+            keypair_config['private_key_path'])
+
+        if does_key_exist_on_openstack:
+            if not does_key_exist_locally:
+                err = 'config file validation error originating at key: {0}, '\
+                      'keypair {1} exists on Openstack, but there is no ' \
+                      'private key file at {2}'\
+                      .format(keypair_config_path, keypair_config['name'],
+                              keypair_config['private_key_path'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+        else:
+            if keypair_config[CREATE_IF_MISSING] and does_key_exist_locally:
+                err = 'config file validation error originating at key: {0}, '\
+                      "can't create keypair {1} because private key target " \
+                      "path {2} already exists"\
+                      .format(keypair_config_path, keypair_config['name'],
+                              keypair_config['private_key_path'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+            elif not keypair_config[CREATE_IF_MISSING]:
+                err = 'config file validation error originating at key: {0}, '\
+                      'keypair {1} does not exist in the pool but is marked '\
+                      'as create_if_missing = False. please provide an '\
+                      'existing resource name or change create_if_missing = '\
+                      'True to automatically create a new resource.'\
+                      .format(keypair_config_path, keypair_config['name'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+
+        lgr.debug(
+            'OK: keypair {0} configuration is valid'.format(keypair_type))
         return True
 
 
@@ -699,12 +745,6 @@ class CosmoOnOpenStackDriver(object):
                 'url': networking['neutron_url']
             })
 
-        def _get_private_key_path_from_keypair_config(keypair_config):
-            path = keypair_config['provided']['private_key_filepath'] if \
-                'provided' in keypair_config else \
-                keypair_config['auto_generated']['private_key_target_path']
-            return expanduser(path)
-
         compute_config = self.config['compute']
         mgmt_server_config = compute_config['management_server']
 
@@ -712,8 +752,8 @@ class CosmoOnOpenStackDriver(object):
             _copy(
                 mgmt_server_config['userhome_on_management'],
                 self.config['keystone'],
-                _get_private_key_path_from_keypair_config(
-                    compute_config['agent_servers']['agents_keypair']),
+                expanduser(compute_config['agent_servers']['agents_keypair'][
+                    'private_key_path']),
                 self.config['networking'],
                 self.config.get('cloudify', {}))
 
@@ -814,12 +854,7 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'management_keypair',
             False,
-            private_key_target_path=mgr_kpconf['auto_generated']
-                                              ['private_key_target_path'] if
-            'auto_generated' in mgr_kpconf else None,
-            public_key_filepath=mgr_kpconf['provided']
-                                          ['public_key_filepath'] if
-            'provided' in mgr_kpconf else None
+            private_key_path=mgr_kpconf['private_key_path']
         )
 
         agents_kpconf = compute_config['agent_servers']['agents_keypair']
@@ -829,12 +864,7 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'agents_keypair',
             False,
-            private_key_target_path=agents_kpconf['auto_generated']
-            ['private_key_target_path'] if 'auto_generated' in
-                                           agents_kpconf else None,
-            public_key_filepath=agents_kpconf['provided']
-                                             ['public_key_filepath'] if
-            'provided' in agents_kpconf else None
+            private_key_path=agents_kpconf['private_key_path']
         )
 
         server_id = self.server_controller.\
@@ -869,8 +899,7 @@ class CosmoOnOpenStackDriver(object):
         ips = self.server_controller.get_server_ips_in_network(server_id,
                                                                network_name)
         private_ip, public_ip = ips[:2]
-        ssh_key = mgr_kpconf['auto_generated']['private_key_target_path'] \
-            if 'auto_generated' in mgr_kpconf else None
+        ssh_key = expanduser(mgr_kpconf['private_key_path'])
         ssh_user = compute_config['management_server']['user_on_management']
         return public_ip, private_ip, ssh_key, ssh_user, self.provider_context
 
@@ -1194,11 +1223,10 @@ class BaseController(object):
             the_id = self.ensure_exists(name, *args, **kw)
             created = False
         else:
-            if not provider_config.get(CREATE_IF_MISSING, True):
+            if not provider_config[CREATE_IF_MISSING]:
                 raise OpenStackLogicError("{0} '{1}' does not exist but "
-                                          "create_if_missing is false or "
-                                          "absent.".format(self.__class__.WHAT,
-                                                           name))
+                                          "create_if_missing is false"
+                                          .format(self.__class__.WHAT, name))
             the_id = self._create(name, *args, **kw)
             created = True
         return the_id, created
@@ -1529,22 +1557,18 @@ class OpenStackKeypairController(BaseControllerNova):
         return [{'id': keypair.id} for keypair in keypairs if
                 keypair.id == name]
 
-    def create(self, key_name, private_key_target_path=None,
-               public_key_filepath=None, *args, **kwargs):
-        if not private_key_target_path and not public_key_filepath:
-            raise RuntimeError("Must provide either private key target path "
-                               "or public key filepath to create keypair")
+    def create(self, key_name, private_key_path, *args, **kwargs):
+        pk_target_path = expanduser(private_key_path)
+        if os.path.exists(pk_target_path):
+            raise RuntimeError("Can't create keypair {0} - local path for "
+                               "private key already exists: {1}"
+                               .format(key_name, pk_target_path))
 
-        if public_key_filepath:
-            with open(expanduser(public_key_filepath), 'r') as f:
-                keypair = self.nova_client.keypairs.create(key_name, f.read())
-        else:
-            keypair = self.nova_client.keypairs.create(key_name)
-            pk_target_path = expanduser(private_key_target_path)
-            self._mkdir_p(os.path.dirname(private_key_target_path))
-            with open(pk_target_path, 'w') as f:
-                f.write(keypair.private_key)
-                os.system('chmod 600 {0}'.format(pk_target_path))
+        keypair = self.nova_client.keypairs.create(key_name)
+        self._mkdir_p(os.path.dirname(pk_target_path))
+        with open(pk_target_path, 'w') as f:
+            f.write(keypair.private_key)
+            os.system('chmod 600 {0}'.format(pk_target_path))
         return keypair.id
 
     def get_by_id(self, id):

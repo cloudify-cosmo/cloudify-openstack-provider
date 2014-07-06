@@ -28,22 +28,60 @@ PROVIDER_CONFIG_SCHEMA = {
             "required": [
                 'cloudify_components_package_url',
                 'cloudify_core_package_url',
+                'cloudify_ui_package_url',
+                'cloudify_ubuntu_agent_url',
+                'cloudify_agent',
+                'workflows',
+                'bootstrap'
             ],
             "properties": {
-                "cloudify_components_package_path": {
-                    "type": "string",
+                "resources_prefix": {
+                    "type": "string"
                 },
                 "cloudify_components_package_url": {
-                    "type": "string",
-                },
-                "cloudify_package_path": {
                     "type": "string",
                 },
                 "cloudify_core_package_url": {
                     "type": "string",
                 },
-                "cloudify_packages_path": {
+                "cloudify_ui_package_url": {
                     "type": "string",
+                },
+                "cloudify_ubuntu_agent_url": {
+                    "type": "string",
+                },
+                "cloudify_agent": {
+                    "type": "object",
+                    "required": ["min_workers", "max_workers",
+                                 "remote_execution_port"],
+                    "properties": {
+                        "min_workers": {
+                            "type": "number"
+                        },
+                        "max_workers": {
+                            "type": "number"
+                        },
+                        "remote_execution_port": {
+                            "type": "number"
+                        },
+                        "user": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": False
+                },
+                "workflows": {
+                    "type": "object",
+                    "required": ["task_retries", "retry_interval"],
+                    "properties": {
+                        "task_retries": {
+                            "type": "number"
+                        },
+                        "retry_interval": {
+                            "type": "number"
+                        }
+                    },
+                    "additionalProperties": False
                 },
                 "bootstrap": {
                     "type": "object",
@@ -75,7 +113,8 @@ PROVIDER_CONFIG_SCHEMA = {
                     },
                     "additionalProperties": False
                 }
-            }
+            },
+            "additionalProperties": False
         },
         "compute": {
             "type": "object",
@@ -87,35 +126,42 @@ PROVIDER_CONFIG_SCHEMA = {
             "properties": {
                 "agent_servers": {
                     "type": "object",
+                    "required": ["agents_keypair"],
                     "properties": {
                         "agents_keypair": {
                             "type": "object",
+                            "required": ["private_key_path", "name",
+                                         "create_if_missing"],
                             "properties": {
-                                "auto_generated": {
-                                    "type": "object",
-                                    "properties": {
-                                        "private_key_target_path": {
-                                            "type": "string",
-                                        }
-                                    }
+                                "private_key_path": {
+                                    "type": "string",
                                 },
-                                "externally_provisioned": {
+                                "create_if_missing": {
                                     "enum": [True, False],
                                 },
                                 "name": {
                                     "type": "string",
                                 }
-                            }
+                            },
+                            "additionalProperties": False
                         }
-                    }
+                    },
+                    "additionalProperties": False
                 },
                 "management_server": {
                     "type": "object",
+                    "required": ["user_on_management",
+                                 "userhome_on_management",
+                                 "creation_timeout",
+                                 "instance",
+                                 "management_keypair"],
                     "properties": {
                         "instance": {
                             "type": "object",
+                            "required": ["create_if_missing", "name",
+                                         "image", "flavor"],
                             "properties": {
-                                "externally_provisioned": {
+                                "create_if_missing": {
                                     "enum": [True, False],
                                 },
                                 "flavor": {
@@ -127,26 +173,25 @@ PROVIDER_CONFIG_SCHEMA = {
                                 "name": {
                                     "type": "string",
                                 }
-                            }
+                            },
+                            "additionalProperties": False
                         },
                         "management_keypair": {
                             "type": "object",
+                            "required": ["private_key_path", "name",
+                                         "create_if_missing"],
                             "properties": {
-                                "auto_generated": {
-                                    "type": "object",
-                                    "properties": {
-                                        "private_key_target_path": {
-                                            "type": "string",
-                                        }
-                                    }
+                                "private_key_path": {
+                                    "type": "string",
                                 },
-                                "externally_provisioned": {
+                                "create_if_missing": {
                                     "enum": [True, False],
                                 },
                                 "name": {
                                     "type": "string",
                                 }
-                            }
+                            },
+                            "additionalProperties": False
                         },
                         "user_on_management": {
                             "type": "string",
@@ -156,16 +201,22 @@ PROVIDER_CONFIG_SCHEMA = {
                         },
                         "creation_timeout": {
                             "type": "number",
+                        },
+                        "floating_ip": {
+                            "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": False
                 },
                 "region": {
                     "type": "string",
                 }
-            }
+            },
+            "additionalProperties": False
         },
         "keystone": {
             "type": "object",
+            "required": ["auth_url", "password", "tenant_name", "username"],
             "properties": {
                 "auth_url": {
                     "type": "string",
@@ -179,43 +230,59 @@ PROVIDER_CONFIG_SCHEMA = {
                 "username": {
                     "type": "string",
                 }
-            }
+            },
+            'additionalProperties': False,
         },
         "networking": {
             "type": "object",
+            "required": [
+                "agents_security_group",
+                "ext_network",
+                "int_network",
+                "management_security_group",
+                "neutron_supported_region",
+                "router",
+                "subnet"
+            ],
             "properties": {
                 "agents_security_group": {
                     "type": "object",
                     "properties": {
-                        "externally_provisioned": {
+                        "create_if_missing": {
                             "enum": [True, False],
                         },
                         "name": {
                             "type": "string",
                         }
-                    }
+                    },
+                    "required": ["create_if_missing", "name"],
+                    'additionalProperties': False
                 },
                 "ext_network": {
                     "type": "object",
                     "properties": {
-                        "externally_provisioned": {
+                        "create_if_missing": {
                             "enum": [True, False],
                         },
                         "name": {
                             "type": "string",
                         }
-                    }
+                    },
+                    "required": ["create_if_missing", "name"],
+                    'additionalProperties': False
                 },
                 "int_network": {
                     "type": "object",
                     "properties": {
-                        "externally_provisioned": {
+                        "create_if_missing": {
                             "enum": [True, False],
                         },
                         "name": {
                             "type": "string",
                         }
-                    }
+                    },
+                    "required": ["create_if_missing", "name"],
+                    'additionalProperties': False
                 },
                 "management_security_group": {
                     "type": "object",
@@ -223,13 +290,15 @@ PROVIDER_CONFIG_SCHEMA = {
                         "cidr": {
                             "type": "string",
                         },
-                        "externally_provisioned": {
+                        "create_if_missing": {
                             "enum": [True, False],
                         },
                         "name": {
                             "type": "string",
                         }
-                    }
+                    },
+                    "required": ["create_if_missing", "name", "cidr"],
+                    'additionalProperties': False
                 },
                 "neutron_supported_region": {
                     "enum": [True, False],
@@ -240,13 +309,15 @@ PROVIDER_CONFIG_SCHEMA = {
                 "router": {
                     "type": "object",
                     "properties": {
-                        "externally_provisioned": {
+                        "create_if_missing": {
                             "enum": [True, False],
                         },
                         "name": {
                             "type": "string",
                         }
-                    }
+                    },
+                    "required": ["create_if_missing", "name"],
+                    'additionalProperties': False
                 },
                 "subnet": {
                     "type": "object",
@@ -254,7 +325,7 @@ PROVIDER_CONFIG_SCHEMA = {
                         "cidr": {
                             "type": "string",
                         },
-                        "externally_provisioned": {
+                        "create_if_missing": {
                             "enum": [True, False],
                         },
                         "ip_version": {
@@ -269,9 +340,17 @@ PROVIDER_CONFIG_SCHEMA = {
                                 "type": "string"
                             }
                         }
-                    }
+                    },
+                    "required": ["create_if_missing", "name", "ip_version",
+                                 "cidr", "dns_nameservers"],
+                    'additionalProperties': False
                 }
-            }
-        }
+            },
+            'additionalProperties': False,
+        },
+        "dev": {
+            "type": "object"
+        },
+        'additionalProperties': False,
     }
 }
