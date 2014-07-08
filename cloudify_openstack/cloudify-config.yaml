@@ -90,24 +90,26 @@ keystone:
 #
 # # Cloudify Installation Configuration
 ##################################
-#cloudify:
-#
+# cloudify:
 #    # You would probably want a prefix that ends with underscore or dash
 #    resources_prefix: your_name_here
 #
-#    cloudify_components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
-#    cloudify_core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
-#    cloudify_ui_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ui_amd64.deb
-#    cloudify_ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/ubuntu-agent_amd64.deb
-#
-#    cloudify_agent:
-#        min_workers: 2
-#        max_workers: 5
-#        remote_execution_port: 22
-#        user: Enter-Default-Image-User-Here-(Optional)
+#    server:
+#        packages:
+#            components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
+#            core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
+#            ui_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ui_amd64.deb
+#    agents:
+#        packages:
+#            ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/ubuntu-agent_amd64.deb
+#        config:
+#            min_workers: 2
+#            max_workers: 5
+#            remote_execution_port: 22
+#            # user: Enter-Default-Image-User-Here-(Optional)
 #    workflows:
-#            task_retries: -1  # -1 means we retry forever
-#            retry_interval: 30
+#        task_retries: -1  # -1 means we retry forever
+#        retry_interval: 30
 #    bootstrap:
 #        ssh:
 #            # number of retries for the initial connectivity check with the management server
