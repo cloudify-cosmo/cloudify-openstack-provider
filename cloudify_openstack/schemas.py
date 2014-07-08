@@ -26,11 +26,8 @@ PROVIDER_CONFIG_SCHEMA = {
         "cloudify": {
             "type": "object",
             "required": [
-                'cloudify_components_package_url',
-                'cloudify_core_package_url',
-                'cloudify_ui_package_url',
-                'cloudify_ubuntu_agent_url',
-                'cloudify_agent',
+                'server',
+                'agents',
                 'workflows',
                 'bootstrap'
             ],
@@ -38,37 +35,67 @@ PROVIDER_CONFIG_SCHEMA = {
                 "resources_prefix": {
                     "type": "string"
                 },
-                "cloudify_components_package_url": {
-                    "type": "string",
-                },
-                "cloudify_core_package_url": {
-                    "type": "string",
-                },
-                "cloudify_ui_package_url": {
-                    "type": "string",
-                },
-                "cloudify_ubuntu_agent_url": {
-                    "type": "string",
-                },
-                "cloudify_agent": {
+                "server": {
                     "type": "object",
-                    "required": ["min_workers", "max_workers",
-                                 "remote_execution_port"],
+                    "required": [
+                        'packages',
+                    ],
                     "properties": {
-                        "min_workers": {
-                            "type": "number"
+                        "packages": {
+                            "type": "object",
+                            "required": [
+                                'components_package_url',
+                                'core_package_url',
+                            ],
+                            "properties": {
+                                "components_package_url": {
+                                    "type": "string",
+                                },
+                                "core_package_url": {
+                                    "type": "string",
+                                },
+                                "ui_package_url": {
+                                    "type": "string",
+                                }
+                            },
+                            "additionalProperties": False
                         },
-                        "max_workers": {
-                            "type": "number"
-                        },
-                        "remote_execution_port": {
-                            "type": "number"
-                        },
-                        "user": {
-                            "type": "string"
-                        }
                     },
                     "additionalProperties": False
+                },
+                "agents": {
+                    "type": "object",
+                    "required": [
+                        'packages',
+                        'config',
+                    ],
+                    "properties": {
+                        "packages": {
+                            "type": "object",
+                            'minProperties': 1,
+                        },
+                        "config": {
+                            "type": "object",
+                            "required": ["min_workers", "max_workers",
+                                         "remote_execution_port"],
+                            "properties": {
+                                "min_workers": {
+                                    "type": "number"
+                                },
+                                "max_workers": {
+                                    "type": "number"
+                                },
+                                "remote_execution_port": {
+                                    "type": "number"
+                                },
+                                "user": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": False
+                        },
+                    "additionalProperties": False
+                    }
                 },
                 "workflows": {
                     "type": "object",
