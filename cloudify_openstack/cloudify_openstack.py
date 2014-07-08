@@ -900,6 +900,13 @@ class CosmoOnOpenStackDriver(object):
         all_conflicts = {}
 
         def check_for_conflicts(resource_name, controller, **kwargs):
+            if resource_name not in resources:
+                # assigning an empty set of conflicts to the resource,
+                # for easier handling in later stages such as conflicts
+                # propagation etc.
+                all_conflicts[resource_name] = set()
+                return
+
             resource_data = resources[resource_name]
             conflicts = {}
             if resource_data['created']:
@@ -908,7 +915,8 @@ class CosmoOnOpenStackDriver(object):
             all_conflicts[resource_name] = set(conflicts)
 
         def get_known_resource_id(resource_name):
-            return resources[resource_name]['id']
+            return resources[resource_name]['id'] if resource_name in \
+                                                     resources else None
 
         check_for_conflicts('floating_ip', self.floating_ip_controller)
         check_for_conflicts('management_server', self.server_controller)
@@ -974,23 +982,27 @@ class CosmoOnOpenStackDriver(object):
         # 'known_<resource>' usage when checking for conflicts, and the
         # order of the propagation is the same as the order for checking
         # conflicts.
-        if resources['management_security_group']['created']:
+
+        def was_resource_created(resource):
+            return resource in resources and resources[resource]['created']
+
+        if was_resource_created('management_security_group'):
             all_conflicts['management_security_group'].update(
                 all_conflicts['management_server'])
-        if resources['agents_security_group']['created']:
+        if was_resource_created('agents_security_group'):
             all_conflicts['agents_security_group'].update(
                 all_conflicts['management_server'])
-        if resources['subnet']['created']:
+        if was_resource_created('subnet'):
             all_conflicts['subnet'].update(
                 all_conflicts['management_server'])
 
-        if resources['router']['created']:
+        if was_resource_created('router'):
             all_conflicts['router'].update(all_conflicts['floating_ip'])
 
-        if resources['subnet']['created']:
+        if was_resource_created('subnet'):
             all_conflicts['subnet'].update(all_conflicts['router'])
 
-        if resources['int_network']['created']:
+        if was_resource_created('int_network'):
             all_conflicts['int_network'].update(all_conflicts['subnet'])
 
     def _delete_resources(self, resources):
@@ -999,6 +1011,8 @@ class CosmoOnOpenStackDriver(object):
         failed_to_delete_resources = []
 
         def del_resource(resource_name, controller):
+            if resource_name not in resources:
+                return
             resource_data = resources[resource_name]
             if resource_data['created']:
                 result = controller.delete_resource(resource_data['id'])
