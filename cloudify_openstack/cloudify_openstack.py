@@ -1100,17 +1100,17 @@ class BaseController(object):
             self.__class__.WHAT, name))
         return self.create(name, **kw)
 
-    def _check(self, name):
+    def _check_exists(self, name):
         lgr.debug("Checking to see if {0} '{1}' already exists".format(
             self.__class__.WHAT, name))
-        if self.list_objects_with_name(name):
+        res = self.find_by_name(name)
+        if res:
             lgr.debug("{0} '{1}' already exists".format(
                 self.__class__.WHAT, name))
-            return True
         else:
             lgr.debug("{0} '{1}' does not exist".format(
                 self.__class__.WHAT, name))
-            return False
+        return res
 
     def delete_resource(self, resource_id, retries=3, sleep=3):
         # Attempts to delete a resource by id (with retries).
@@ -1189,11 +1189,15 @@ class BaseController(object):
                 raise does not exist
             create resource
         """
-        if self._check(name):
-            if self.__class__.WHAT in ('server'):
+        resource = self._check_exists(name)
+        if resource:
+            if self.__class__.WHAT in ('server',):
                 raise OpenStackLogicError("{0} '{1}' already exists".format(
                                           self.__class__.WHAT, name))
-            the_id = self.ensure_exists(name)
+
+            lgr.debug("Will use existing {0} '{1}'"
+                      .format(self.__class__.WHAT, name))
+            the_id = resource['id']
             created = False
         else:
             if not provider_config[CREATE_IF_MISSING]:
@@ -1216,15 +1220,6 @@ class BaseController(object):
             'name': name,
             'created': created
         }
-
-    def ensure_exists(self, name):
-        lgr.debug("Will use existing {0} '{1}'"
-                  .format(self.__class__.WHAT, name))
-        ret = self.find_by_name(name)
-        if not ret:
-            raise OpenStackLogicError("{0} '{1}' was not found".format(
-                self.__class__.WHAT, name))
-        return ret['id']
 
     def find_by_name(self, name):
         matches = self.list_objects_with_name(name)
