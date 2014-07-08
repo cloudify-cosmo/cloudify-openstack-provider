@@ -777,61 +777,51 @@ class CosmoOnOpenStackDriver(object):
             self.config['networking']['neutron_supported_region']
         if is_neutron_supported_region:
             nconf = self.config['networking']['int_network']
-            net_id = self.network_controller\
-                .create_or_ensure_exists_log_resources(
-                    nconf,
-                    nconf['name'],
-                    resources,
-                    'int_network',
-                    False)
+            net_id = self.network_controller.create_or_ensure_exists(
+                nconf,
+                nconf['name'],
+                resources,
+                'int_network')[0]
 
             sconf = self.config['networking']['subnet']
-            subnet_id = self.subnet_controller.\
-                create_or_ensure_exists_log_resources(
-                    sconf,
-                    sconf['name'],
-                    resources,
-                    'subnet',
-                    False,
-                    sconf['ip_version'],
-                    sconf['cidr'],
-                    sconf['dns_nameservers'],
-                    net_id)
+            subnet_id = self.subnet_controller.create_or_ensure_exists(
+                sconf,
+                sconf['name'],
+                resources,
+                'subnet',
+                sconf['ip_version'],
+                sconf['cidr'],
+                sconf['dns_nameservers'],
+                net_id)[0]
 
             enconf = self.config['networking']['ext_network']
-            enet_id = self.network_controller.\
-                create_or_ensure_exists_log_resources(
-                    enconf,
-                    enconf['name'],
-                    resources,
-                    'ext_network',
-                    False,
-                    ext=True)
+            enet_id = self.network_controller.create_or_ensure_exists(
+                enconf,
+                enconf['name'],
+                resources,
+                'ext_network',
+                ext=True)[0]
 
             rconf = self.config['networking']['router']
-            self.router_controller.\
-                create_or_ensure_exists_log_resources(
-                    rconf,
-                    rconf['name'],
-                    resources,
-                    'router',
-                    False,
-                    interfaces=[{'subnet_id': subnet_id}],
-                    external_gateway_info={"network_id": enet_id})
+            self.router_controller.create_or_ensure_exists(
+                rconf,
+                rconf['name'],
+                resources,
+                'router',
+                interfaces=[{'subnet_id': subnet_id}],
+                external_gateway_info={"network_id": enet_id})
 
             insconf['nics'] = [{'net-id': net_id}]
 
         # Security group for Cosmo created instances
         asgconf = self.config['networking']['agents_security_group']
-        asg_id, agent_sg_created = self.sg_controller.\
-            create_or_ensure_exists_log_resources(
-                asgconf,
-                asgconf['name'],
-                resources,
-                'agents_security_group',
-                True,
-                'Cosmo created machines',
-                [])
+        asg_id, agent_sg_created = self.sg_controller.create_or_ensure_exists(
+            asgconf,
+            asgconf['name'],
+            resources,
+            'agents_security_group',
+            'Cosmo created machines',
+            [])
 
         # Security group for Cosmo manager, allows created
         # instances -> manager communication
@@ -839,14 +829,13 @@ class CosmoOnOpenStackDriver(object):
         sg_rules = \
             [{'port': p, 'group_id': asg_id} for p in INTERNAL_MGMT_PORTS] + \
             [{'port': p, 'cidr': msgconf['cidr']} for p in EXTERNAL_MGMT_PORTS]
-        msg_id = self.sg_controller.create_or_ensure_exists_log_resources(
+        msg_id = self.sg_controller.create_or_ensure_exists(
             msgconf,
             msgconf['name'],
             resources,
             'management_security_group',
-            False,
             'Cosmo Manager',
-            sg_rules)
+            sg_rules)[0]
 
         # Add rules to agent security group. (Happens here because we need
         # the management security group id)
@@ -857,37 +846,30 @@ class CosmoOnOpenStackDriver(object):
 
         # Keypairs setup
         mgr_kpconf = compute_config['management_server']['management_keypair']
-        self.keypair_controller.create_or_ensure_exists_log_resources(
+        self.keypair_controller.create_or_ensure_exists(
             mgr_kpconf,
             mgr_kpconf['name'],
             resources,
             'management_keypair',
-            False,
-            private_key_path=mgr_kpconf['private_key_path']
-        )
+            private_key_path=mgr_kpconf['private_key_path'])
 
         agents_kpconf = compute_config['agent_servers']['agents_keypair']
-        self.keypair_controller.create_or_ensure_exists_log_resources(
+        self.keypair_controller.create_or_ensure_exists(
             agents_kpconf,
             agents_kpconf['name'],
             resources,
             'agents_keypair',
-            False,
-            private_key_path=agents_kpconf['private_key_path']
-        )
+            private_key_path=agents_kpconf['private_key_path'])
 
-        server_id = self.server_controller.\
-            create_or_ensure_exists_log_resources(
-                insconf,
-                insconf['name'],
-                resources,
-                'management_server',
-                False,
-                {k: v for k, v in insconf.iteritems() if k != CREATE_IF_MISSING},  # NOQA
-                mgr_kpconf['name'],
-                msg_id if is_neutron_supported_region else msgconf['name'],
-                compute_config['management_server']['creation_timeout']
-            )
+        server_id = self.server_controller.create_or_ensure_exists(
+            insconf,
+            insconf['name'],
+            resources,
+            'management_server',
+            {k: v for k, v in insconf.iteritems() if k != CREATE_IF_MISSING},
+            mgr_kpconf['name'],
+            msg_id if is_neutron_supported_region else msgconf['name'],
+            compute_config['management_server']['creation_timeout'])[0]
 
         if is_neutron_supported_region:
             network_name = nconf['name']
@@ -1111,10 +1093,11 @@ class OpenStackLogicError(RuntimeError):
 
 class BaseController(object):
 
-    def _create(self, name, *args, **kw):
+    def _create_and_log_resource(self, name, resources, resource_name,
+                                 *args, **kw):
         lgr.debug("Will create {0} '{1}'".format(
             self.__class__.WHAT, name))
-        return self.create(name, *args, **kw)
+        return self.create(name, resources, resource_name, *args, **kw)
 
     def _check(self, name, *args, **kw):
         lgr.debug("Checking to see if {0} '{1}' already exists".format(
@@ -1127,27 +1110,6 @@ class BaseController(object):
             lgr.debug("{0} '{1}' does not exist".format(
                 self.__class__.WHAT, name))
             return False
-
-    def create_or_ensure_exists_log_resources(self, provider_config, name,
-                                              resources, resource_name,
-                                              return_created, *args,
-                                              **kwargs):
-        id, created = self._create_or_ensure_exists(provider_config, name,
-                                                    *args, **kwargs)
-        resources[resource_name] = {
-            'id': str(id),
-            'type': self.__class__.WHAT,
-            'name': name,
-            'created': created
-        }
-        # TODO:
-        # replace:
-        if return_created:
-            return id, created
-        else:
-            return id
-        # with:
-        # return id, created if return_created else id
 
     def delete_resource(self, resource_id, retries=3, sleep=3):
         # Attempts to delete a resource by id (with retries).
@@ -1214,7 +1176,8 @@ class BaseController(object):
         return hasattr(e, 'status_code') and e.status_code == 404 or \
             hasattr(e, 'http_status') and e.http_status == 404
 
-    def _create_or_ensure_exists(self, provider_config, name, *args, **kw):
+    def create_or_ensure_exists(self, provider_config, name, resources,
+                                resource_name, *args, **kw):
         """
         if resource exists:
             if resource is server:
@@ -1230,15 +1193,25 @@ class BaseController(object):
                 raise OpenStackLogicError("{0} '{1}' already exists".format(
                                           self.__class__.WHAT, name))
             the_id = self.ensure_exists(name, *args, **kw)
+            self._log_resource(resources, resource_name, the_id, name, False)
             created = False
         else:
             if not provider_config[CREATE_IF_MISSING]:
                 raise OpenStackLogicError("{0} '{1}' does not exist but "
                                           "create_if_missing is false"
                                           .format(self.__class__.WHAT, name))
-            the_id = self._create(name, *args, **kw)
+            the_id = self._create_and_log_resource(name, resources,
+                                                   resource_name, *args, **kw)
             created = True
         return the_id, created
+
+    def _log_resource(self, resources, resource_name, id, name, created):
+        resources[resource_name] = {
+            'id': str(id),
+            'type': self.__class__.WHAT,
+            'name': name,
+            'created': created
+        }
 
     def ensure_exists(self, name, *args, **kw):
         lgr.debug("Will use existing {0} '{1}'"
@@ -1292,7 +1265,7 @@ class OpenStackNetworkController(BaseControllerNeutron):
     def list_objects_with_name(self, name):
         return self.neutron_client.list_networks(name=name)['networks']
 
-    def create(self, name, ext=False):
+    def create(self, name, resources, resource_name, ext=False):
         n = {
             'network': {
                 'name': name,
@@ -1302,7 +1275,9 @@ class OpenStackNetworkController(BaseControllerNeutron):
         if ext:
             n['router:external'] = ext
         ret = self.neutron_client.create_network(n)
-        return ret['network']['id']
+        net_id = ret['network']['id']
+        self._log_resource(resources, resource_name, net_id, name, True)
+        return net_id
 
     def get_by_id(self, id):
         return self.neutron_client.show_network(id)
@@ -1340,7 +1315,8 @@ class OpenStackSubnetController(BaseControllerNeutron):
     def list_objects_with_name(self, name):
         return self.neutron_client.list_subnets(name=name)['subnets']
 
-    def create(self, name, ip_version, cidr, dns_nameservers, net_id):
+    def create(self, name, resources, resource_name, ip_version, cidr,
+               dns_nameservers, net_id):
         ret = self.neutron_client.create_subnet({
             'subnet': {
                 'name': name,
@@ -1350,7 +1326,9 @@ class OpenStackSubnetController(BaseControllerNeutron):
                 'network_id': net_id
             }
         })
-        return ret['subnet']['id']
+        sub_id = ret['subnet']['id']
+        self._log_resource(resources, resource_name, sub_id, name, True)
+        return sub_id
 
     def get_by_id(self, id):
         return self.neutron_client.show_subnet(id)
@@ -1395,7 +1373,7 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
     def list_objects_with_name(self, name):
         raise RuntimeError('UNSUPPORTED OPERATION')
 
-    def create(self, name):
+    def create(self, name, resources, resource_name):
         raise RuntimeError('UNSUPPORTED OPERATION')
 
     def allocate_ip(self, external_network_id):
@@ -1424,7 +1402,8 @@ class OpenStackRouterController(BaseControllerNeutron):
     def list_objects_with_name(self, name):
         return self.neutron_client.list_routers(name=name)['routers']
 
-    def create(self, name, interfaces=None, external_gateway_info=None):
+    def create(self, name, resources, resource_name, interfaces=None,
+               external_gateway_info=None):
         args = {
             'router': {
                 'name': name,
@@ -1434,6 +1413,8 @@ class OpenStackRouterController(BaseControllerNeutron):
         if external_gateway_info:
             args['router']['external_gateway_info'] = external_gateway_info
         router_id = self.neutron_client.create_router(args)['router']['id']
+        self._log_resource(resources, resource_name, router_id, name, True)
+
         if interfaces:
             for i in interfaces:
                 self.neutron_client.add_interface_router(router_id, i)
@@ -1471,8 +1452,10 @@ class OpenStackNovaSecurityGroupController(BaseControllerNova):
         sgs = self.nova_client.security_groups.list()
         return [{'id': sg.id} for sg in sgs if sg.name == name]
 
-    def create(self, name, description, rules):
+    def create(self, name, resources, resource_name, description, rules):
         sg = self.nova_client.security_groups.create(name, description)
+        self._log_resource(resources, resource_name, sg.id, name, True)
+
         for rule in rules:
             self.nova_client.security_group_rules.create(
                 sg.id,
@@ -1510,13 +1493,14 @@ class OpenStackNeutronSecurityGroupController(BaseControllerNeutron):
         return self.neutron_client.list_security_groups(
             name=name)['security_groups']
 
-    def create(self, name, description, rules):
+    def create(self, name, resources, resource_name, description, rules):
         sg = self.neutron_client.create_security_group({
             'security_group': {
                 'name': name,
                 'description': description,
             }
         })['security_group']
+        self._log_resource(resources, resource_name, sg['id'], name, True)
         self.add_rules(sg['id'], rules)
         return sg['id']
 
@@ -1566,7 +1550,8 @@ class OpenStackKeypairController(BaseControllerNova):
         return [{'id': keypair.id} for keypair in keypairs if
                 keypair.id == name]
 
-    def create(self, key_name, private_key_path, *args, **kwargs):
+    def create(self, key_name, resources, resource_name, private_key_path,
+               *args, **kwargs):
         pk_target_path = expanduser(private_key_path)
         if os.path.exists(pk_target_path):
             raise RuntimeError("Can't create keypair {0} - local path for "
@@ -1574,6 +1559,9 @@ class OpenStackKeypairController(BaseControllerNova):
                                .format(key_name, pk_target_path))
 
         keypair = self.nova_client.keypairs.create(key_name)
+        self._log_resource(resources, resource_name, keypair.id, key_name,
+                           True)
+
         self._mkdir_p(os.path.dirname(pk_target_path))
         with open(pk_target_path, 'w') as f:
             f.write(keypair.private_key)
@@ -1611,7 +1599,8 @@ class OpenStackServerController(BaseControllerNova):
         servers = self.nova_client.servers.list(True, {'name': name_re})
         return [{'id': server.id} for server in servers]
 
-    def create(self, name, server_config, management_server_keypair_name,
+    def create(self, name, resources, resource_name, server_config,
+               management_server_keypair_name,
                sgm_id, creation_timeout, *args, **kwargs):
         """
         Creates a server. Exposes the parameters mentioned in
@@ -1661,6 +1650,7 @@ class OpenStackServerController(BaseControllerNova):
         params['key_name'] = management_server_keypair_name
 
         server = self.nova_client.servers.create(**params)
+        self._log_resource(resources, resource_name, server.id, name, True)
         server = self._wait_for_server_to_become_active(server,
                                                         creation_timeout)
         return server.id
