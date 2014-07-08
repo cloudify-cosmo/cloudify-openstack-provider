@@ -501,7 +501,7 @@ class OpenStackValidator:
             if resource_amount < resource_quota:
                 lgr.debug('OK:'
                           '{0} {1} can be created.'
-                          ' privisioned {2}s: {3}, quota: {4}'
+                          ' provisioned {2}s: {3}, quota: {4}'
                           .format(resource_type, resource_config['name'],
                                   resource_type, resource_amount,
                                   resource_quota))
