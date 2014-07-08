@@ -70,7 +70,8 @@ PROVIDER_CONFIG_SCHEMA = {
                     ],
                     "properties": {
                         "packages": {
-                            "type": "object"
+                            "type": "object",
+                            'minProperties': 1,
                         },
                         "config": {
                             "type": "object",
