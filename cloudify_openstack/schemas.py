@@ -36,6 +36,9 @@ PROVIDER_CONFIG_SCHEMA = {
                     "type": "string"
                 "server": {
                     "type": "object",
+                    "required": [
+                        'packages',
+                    ],
                     "properties": {
                         "packages": {
                             "type": "object",
@@ -49,13 +52,26 @@ PROVIDER_CONFIG_SCHEMA = {
                                 },
                                 "core_package_url": {
                                     "type": "string",
+                                },
+                                "ui_package_url": {
+                                    "type": "string",
                                 }
-                            }
-                        }
-                    }
+                            },
+                            "additionalProperties": False
+                        },
+                    },
+                    "additionalProperties": False
+                }
                 "agents": {
                     "type": "object",
+                    "required": [
+                        'packages',
+                        'config',
+                    ],
                     "properties": {
+                        "packages": {
+                            "type": "object"
+                        },
                         "config": {
                             "type": "object",
                             "required": ["min_workers", "max_workers",
@@ -76,6 +92,7 @@ PROVIDER_CONFIG_SCHEMA = {
                             },
                             "additionalProperties": False
                         },
+                    "additionalProperties": False
                     }
                 },
                 "workflows": {
