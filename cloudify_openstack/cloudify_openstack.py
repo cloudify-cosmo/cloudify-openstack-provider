@@ -181,7 +181,7 @@ class ProviderManager(BaseProviderClass):
 
         returns a tuple with the machine's public and private ip's,
         the ssh key and user configured in the config yaml and
-        the prorivder's context (a dict containing the privisioned
+        the provider's context (a dict containing the provisioned
         resources to be used during teardown)
 
         the tuple's order should correspond with the above order.
@@ -189,9 +189,18 @@ class ProviderManager(BaseProviderClass):
         :rtype: 'tuple' with machine context.
         """
         driver = self._get_driver(self.provider_config)
-        public_ip, private_ip, ssh_key, ssh_user, provider_context = \
-            driver.create_topology()
-        return public_ip, private_ip, ssh_key, ssh_user, provider_context
+        try:
+            public_ip, private_ip, ssh_key, ssh_user, provider_context = \
+                driver.create_topology()
+            return public_ip, private_ip, ssh_key, ssh_user, provider_context
+        except BaseException:
+            lgr.error('provisioning failed!')
+            if self.keep_up_on_failure:
+                lgr.info('topology will remain up')
+            else:
+                lgr.info('tearing down topology due to provision failure')
+                driver.delete_topology()
+            raise
 
     def bootstrap(self, mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user,
                   dev_mode=False):
