@@ -34,6 +34,7 @@ PROVIDER_CONFIG_SCHEMA = {
             "properties": {
                 "resources_prefix": {
                     "type": "string"
+                },
                 "server": {
                     "type": "object",
                     "required": [
