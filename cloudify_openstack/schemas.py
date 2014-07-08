@@ -62,7 +62,7 @@ PROVIDER_CONFIG_SCHEMA = {
                         },
                     },
                     "additionalProperties": False
-                }
+                },
                 "agents": {
                     "type": "object",
                     "required": [
