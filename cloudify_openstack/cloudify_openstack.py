@@ -21,9 +21,9 @@ import os
 import errno
 import inspect
 import itertools
+import re
 import time
 import urllib
-from stat import ST_MODE
 import json
 import shutil
 from getpass import getuser
@@ -55,8 +55,6 @@ from cosmo_cli.provider_common import BaseProviderClass
 
 # declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
-# declare which ssh key permissions are valid for bootstrap
-MINIMAL_KEY_PERMS = 600
 
 # declare which ports should be opened during provisioning
 EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
@@ -97,7 +95,29 @@ class ProviderManager(BaseProviderClass):
     - teardown: *mandatory*
     """
 
-    def __init__(self, provider_config=None, is_verbose_output=False):
+    schema = PROVIDER_CONFIG_SCHEMA
+
+    # Resources to prefix
+    # In each one of them, the "name" is prefixed.
+    CONFIG_NAMES_TO_MODIFY = (
+        ('networking', 'int_network'),
+        ('networking', 'subnet'),
+        # ('networking', 'ext_network'),
+        ('networking', 'router'),
+        ('networking', 'agents_security_group'),
+        ('networking', 'management_security_group'),
+        ('compute', 'agent_servers', 'agents_keypair'),
+        ('compute', 'management_server', 'instance'),
+        ('compute', 'management_server', 'management_keypair'),
+    )
+
+    CONFIG_FILES_PATHS_TO_MODIFY = (
+        ('compute', 'agent_servers', 'private_key_path'),
+        ('compute', 'management_server', 'management_keypair',
+            'private_key_path'),
+    )
+
+    def __init__(self, provider_config, is_verbose_output):
         """
         initializes base params.
 
@@ -120,8 +140,7 @@ class ProviderManager(BaseProviderClass):
         self._modify_keystone_from_environment(provider_config, os.environ)
 
         super(ProviderManager, self).__init__(provider_config,
-                                              is_verbose_output,
-                                              schema=PROVIDER_CONFIG_SCHEMA)
+                                              is_verbose_output)
 
     def _modify_keystone_from_environment(self, config, environ):
         keystone_exists = False
@@ -172,10 +191,16 @@ class ProviderManager(BaseProviderClass):
         driver = self._get_driver(self.provider_config)
         public_ip, private_ip, ssh_key, ssh_user, provider_context = \
             driver.create_topology()
-        driver.copy_files_to_manager(public_ip, ssh_key, ssh_user)
         return public_ip, private_ip, ssh_key, ssh_user, provider_context
 
-    def validate(self, validation_errors={}):
+    def bootstrap(self, mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user,
+                  dev_mode=False):
+        driver = self._get_driver(self.provider_config)
+        driver.copy_files_to_manager(mgmt_ip, mgmt_ssh_key, mgmt_ssh_user)
+        return super(ProviderManager, self).bootstrap(
+            mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user, dev_mode)
+
+    def validate(self):
         """
         validations to be performed before provisioning and bootstrapping
         the management server.
@@ -192,8 +217,7 @@ class ProviderManager(BaseProviderClass):
         # get openstack clients
         connector = OpenStackConnector(self.provider_config)
         # get verifier object
-        verifier = OpenStackValidator(validation_errors,
-                                      connector.get_nova_client(),
+        verifier = OpenStackValidator(connector.get_nova_client(),
                                       connector.get_neutron_client(),
                                       connector.get_keystone_client())
 
@@ -217,11 +241,11 @@ class ProviderManager(BaseProviderClass):
             networking_config['management_security_group']['cidr'])
 
         lgr.info('validating networking resources...')
-        if 'neutron_url' in networking_config.keys():
+        if 'neutron_url' in networking_config:
             verifier.validate_url_accessible(
                 'networking.network_url',
                 networking_config['neutron_url'])
-        if 'router' in networking_config.keys():
+        if 'router' in networking_config:
             verifier.validate_neutron_resource(
                 'networking.router.name',
                 networking_config['router'],
@@ -237,7 +261,7 @@ class ProviderManager(BaseProviderClass):
             networking_config['int_network'],
             resource_type='network',
             method='list_networks')
-        if 'agents_security_group' in networking_config.keys():
+        if 'agents_security_group' in networking_config:
             verifier.validate_neutron_resource(
                 'networking.agents_security_group.name',
                 networking_config['agents_security_group'],
@@ -250,7 +274,7 @@ class ProviderManager(BaseProviderClass):
             method='list_security_groups')
 
         lgr.info('validating compute resources...')
-        if 'floating_ip' in mgmt_server_config.keys() \
+        if 'floating_ip' in mgmt_server_config \
                 and verifier.validate_cidr_syntax(
                     'compute.management_server.floating_ip',
                     mgmt_server_config['floating_ip']):
@@ -267,33 +291,34 @@ class ProviderManager(BaseProviderClass):
         verifier.validate_flavor_exists(
             'compute.management_server.instance.flavor',
             mgmt_server_config['instance']['flavor'])
+
+        verifier.validate_keypair_configuration(
+            mgmt_keypair_config,
+            'compute.management_server.management_keypair')
+
+        verifier.validate_keypair_configuration(
+            agent_keypair_config,
+            'compute.agent_servers.agents_keypair')
+
         if platform.system() in linuxd:
-            if verifier.check_key_exists(
-                mgmt_keypair_config['auto_generated']
-                                   ['private_key_target_path']):
-                verifier.validate_key_perms(
-                    'compute.management_server.management_keypair'
-                    '.auto_generated.private_key_target_path',
-                    mgmt_keypair_config['auto_generated']
-                                       ['private_key_target_path'])
-                verifier.validate_path_owner(
-                    'compute.management_server.management_keypair'
-                    '.auto_generated.private_key_target_path',
-                    mgmt_keypair_config['auto_generated']
-                                       ['private_key_target_path'])
-            if verifier.check_key_exists(
-                agent_keypair_config['auto_generated']
-                                    ['private_key_target_path']):
-                verifier.validate_key_perms(
-                    'compute.agent_servers.agents_keypair'
-                    '.auto_generated.private_key_target_path',
-                    agent_keypair_config['auto_generated']
-                                        ['private_key_target_path'])
-                verifier.validate_path_owner(
-                    'compute.agent_servers.agents_keypair'
-                    '.auto_generated.private_key_target_path',
-                    agent_keypair_config['auto_generated']
-                                        ['private_key_target_path'])
+            def validate_local_keyfile_properties(keypair_config,
+                                                  keypair_config_path):
+                if verifier.check_key_exists_locally(
+                        keypair_config['private_key_path']):
+                    field = '{0}.private_key_path'.format(keypair_config_path)
+
+                    verifier.validate_key_local_perms(
+                        field, keypair_config['private_key_path'])
+                    verifier.validate_path_owner(
+                        field, keypair_config['private_key_path'])
+
+            validate_local_keyfile_properties(
+                mgmt_keypair_config,
+                'compute.management_server.management_keypair')
+
+            validate_local_keyfile_properties(
+                agent_keypair_config,
+                'compute.agent_servers.agents_keypair')
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
@@ -312,6 +337,8 @@ class ProviderManager(BaseProviderClass):
         # verifier.validate_keystone_service_exists('neutron')
         # undeliverable due to nova client bug
         # verifier.validate_instance_quota()
+
+        validation_errors = verifier.validation_errors
 
         lgr.error('resource validation failed!') if validation_errors \
             else lgr.info('resources validated successfully')
@@ -338,7 +365,7 @@ class ProviderManager(BaseProviderClass):
         comfort driver for provisioning and teardown.
         this is not a mandatory method.
         """
-        provider_context = provider_context if provider_context else {}
+        provider_context = provider_context or {}
         connector = OpenStackConnector(provider_config)
         network_controller = OpenStackNetworkController(connector)
         subnet_controller = OpenStackSubnetController(connector)
@@ -375,9 +402,8 @@ class OpenStackValidator:
     we'll check if the element exists and if it doesn't, check if there's
     quota to create the element, and if there isn't, alert.
     """
-    def __init__(self, validation_errors, nova_client, neutron_client,
-                 keystone_client):
-        self.validation_errors = validation_errors
+    def __init__(self, nova_client, neutron_client, keystone_client):
+        self.validation_errors = {}
         self.nova_client = nova_client
         self.neutron_client = neutron_client
         self.keystone_client = keystone_client
@@ -475,7 +501,7 @@ class OpenStackValidator:
                 err = ('config file validation error originating at key: {0}, '
                        '{1} {2} cannot be created due'
                        ' to quota limitations.'
-                       ' privisioned {3}s: {4}, quota: {5}'
+                       ' provisioned {3}s: {4}, quota: {5}'
                        .format(field, resource_type, resource_config['name'],
                                resource_type, resource_amount,
                                resource_quota))
@@ -521,7 +547,7 @@ class OpenStackValidator:
         lgr.debug('checking whether flavor {0} exists...'.format(flavor))
         flavors = self.nova_client.flavors.list()
         for f in flavors:
-            if flavor in f.name or flavor in f.human_id or flavor in f.id:
+            if flavor in (f.name, f.human_id, f.id):
                 lgr.debug('OK:'
                           'flavor {0} exists'.format(flavor))
                 return True
@@ -530,28 +556,30 @@ class OpenStackValidator:
         lgr.error('VALIDATION ERROR:' + err)
         lgr.info('list of available flavors:')
         for f in flavors:
-            lgr.info('    {0}'.format(f.name))
+            lgr.info('    {0:>10} - {1}'.format(f.id, f.name))
         self.validation_errors.setdefault('compute', []).append(err)
         return False
 
-    def check_key_exists(self, key_path):
+    def check_key_exists_locally(self, key_path):
         # lgr.debug('checking whether key {0} exists'
         #           .format(key_path))
         key_path = expanduser(key_path)
-        if not os.path.isfile(key_path):
-            return False
-        return True
+        return os.path.isfile(key_path)
 
-    def validate_key_perms(self, field, key_path):
+    def _check_key_exists_on_openstack(self, key_name):
+        keypairs = self.nova_client.keypairs.list()
+        return len(filter(lambda kp: kp.id == key_name, keypairs)) > 0
+
+    def validate_key_local_perms(self, field, key_path):
         lgr.debug('checking whether key {0} has the right permissions'
                   .format(key_path))
         key_path = expanduser(key_path)
-        if not int(oct(os.stat(key_path)[ST_MODE])[-3:]) <= MINIMAL_KEY_PERMS:
+        if not os.access(key_path, os.R_OK | os.W_OK):
             err = ('config file validation error originating at key: {0}, '
-                   'ssh key {1} does not have the correct permissions'
-                   '({2}).'.format(field, key_path, MINIMAL_KEY_PERMS))
+                   'ssh key {1} is not readable and/or writeable'.format(
+                       field, key_path))
             lgr.error('VALIDATION ERROR:' + err)
-            self.validation_errors.setdefault('copmute', []).append(err)
+            self.validation_errors.setdefault('compute', []).append(err)
             return False
         lgr.debug('OK:'
                   'ssh key {0} has the correct permissions'.format(key_path))
@@ -588,9 +616,59 @@ class OpenStackValidator:
                    .format(field, path, owner))
             lgr.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('compute', []).append(err)
-            return
+            return False
         lgr.debug('OK:'
                   '{0} is owned by the current user'.format(path))
+        return True
+
+    def validate_keypair_configuration(self, keypair_config,
+                                       keypair_config_path):
+        # a keypair configuration is valid if the key already exists on both
+        # Openstack and locally, or if it doesn't exist on either and
+        # 'create_if_missing' is set to True
+
+        keypair_type = keypair_config_path.split('.')[-1]
+        lgr.debug('checking whether {0} configuration is valid'.format(
+            keypair_type))
+
+        does_key_exist_on_openstack = \
+            self._check_key_exists_on_openstack(keypair_config['name'])
+        does_key_exist_locally = self.check_key_exists_locally(
+            keypair_config['private_key_path'])
+
+        if does_key_exist_on_openstack:
+            if not does_key_exist_locally:
+                err = 'config file validation error originating at key: {0}, '\
+                      'keypair {1} exists on Openstack, but there is no ' \
+                      'private key file at {2}'\
+                      .format(keypair_config_path, keypair_config['name'],
+                              keypair_config['private_key_path'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+        else:
+            if keypair_config[CREATE_IF_MISSING] and does_key_exist_locally:
+                err = 'config file validation error originating at key: {0}, '\
+                      "can't create keypair {1} because private key target " \
+                      "path {2} already exists"\
+                      .format(keypair_config_path, keypair_config['name'],
+                              keypair_config['private_key_path'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+            elif not keypair_config[CREATE_IF_MISSING]:
+                err = 'config file validation error originating at key: {0}, '\
+                      'keypair {1} does not exist in the pool but is marked '\
+                      'as create_if_missing = False. please provide an '\
+                      'existing resource name or change create_if_missing = '\
+                      'True to automatically create a new resource.'\
+                      .format(keypair_config_path, keypair_config['name'])
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('compute', []).append(err)
+                return False
+
+        lgr.debug(
+            'OK: keypair {0} configuration is valid'.format(keypair_type))
         return True
 
 
@@ -618,22 +696,23 @@ class CosmoOnOpenStackDriver(object):
     def copy_files_to_manager(self, mgmt_ip, ssh_key, ssh_user):
         def _copy(userhome_on_management,
                   keystone_config, agents_key_path,
-                  networking):
+                  networking, cloudify_config):
+            ssh_config = self.config['cloudify']['bootstrap']['ssh']
 
             env.user = ssh_user
             env.key_filename = ssh_key
             env.abort_on_prompts = False
-            env.connection_attempts = 12
+            env.connection_attempts = ssh_config['connection_attempts']
             env.keepalive = 0
             env.linewise = False
             env.pool_size = 0
             env.skip_bad_hosts = False
-            env.timeout = 5
+            env.timeout = ssh_config['socket_timeout']
             env.forward_agent = True
             env.status = False
             env.disable_known_hosts = False
 
-            lgr.info('uploading keystone and neutron files to manager')
+            lgr.info('uploading keystone and neutron and files to manager')
             tempdir = tempfile.mkdtemp()
 
             # TODO: handle failed copy operations
@@ -648,26 +727,23 @@ class CosmoOnOpenStackDriver(object):
 
             shutil.rmtree(tempdir)
 
+        def _make_json_file(tempdir, file_basename, data):
+            file_path = os.path.join(tempdir, file_basename + '.json')
+            with open(file_path, 'w') as f:
+                json.dump(data, f)
+            return file_path
+
         def _make_keystone_file(tempdir, keystone_config):
             # put default region in keystone_config file
-            keystone_config['region'] = \
-                self.config['compute']['region']
-            keystone_file_path = os.path.join(tempdir, 'keystone_config.json')
-            with open(keystone_file_path, 'w') as f:
-                json.dump(keystone_config, f)
-            return keystone_file_path
+            config = {}
+            config.update(keystone_config)
+            config.update({'region': self.config['compute']['region']})
+            return _make_json_file(tempdir, 'keystone_config', config)
 
         def _make_neutron_file(tempdir, networking):
-            neutron_file_path = os.path.join(tempdir, 'neutron_config.json')
-            with open(neutron_file_path, 'w') as f:
-                json.dump({'url': networking['neutron_url']}, f)
-            return neutron_file_path
-
-        def _get_private_key_path_from_keypair_config(keypair_config):
-            path = keypair_config['provided']['private_key_filepath'] if \
-                'provided' in keypair_config else \
-                keypair_config['auto_generated']['private_key_target_path']
-            return expanduser(path)
+            return _make_json_file(tempdir, 'neutron_config', {
+                'url': networking['neutron_url']
+            })
 
         compute_config = self.config['compute']
         mgmt_server_config = compute_config['management_server']
@@ -676,9 +752,10 @@ class CosmoOnOpenStackDriver(object):
             _copy(
                 mgmt_server_config['userhome_on_management'],
                 self.config['keystone'],
-                _get_private_key_path_from_keypair_config(
-                    compute_config['agent_servers']['agents_keypair']),
-                self.config['networking'])
+                expanduser(compute_config['agent_servers']['agents_keypair'][
+                    'private_key_path']),
+                self.config['networking'],
+                self.config.get('cloudify', {}))
 
     def create_topology(self):
         resources = {}
@@ -777,12 +854,7 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'management_keypair',
             False,
-            private_key_target_path=mgr_kpconf['auto_generated']
-                                              ['private_key_target_path'] if
-            'auto_generated' in mgr_kpconf else None,
-            public_key_filepath=mgr_kpconf['provided']
-                                          ['public_key_filepath'] if
-            'provided' in mgr_kpconf else None
+            private_key_path=mgr_kpconf['private_key_path']
         )
 
         agents_kpconf = compute_config['agent_servers']['agents_keypair']
@@ -792,12 +864,7 @@ class CosmoOnOpenStackDriver(object):
             resources,
             'agents_keypair',
             False,
-            private_key_target_path=agents_kpconf['auto_generated']
-            ['private_key_target_path'] if 'auto_generated' in
-                                           agents_kpconf else None,
-            public_key_filepath=agents_kpconf['provided']
-                                             ['public_key_filepath'] if
-            'provided' in agents_kpconf else None
+            private_key_path=agents_kpconf['private_key_path']
         )
 
         server_id = self.server_controller.\
@@ -809,7 +876,8 @@ class CosmoOnOpenStackDriver(object):
                 False,
                 {k: v for k, v in insconf.iteritems() if k != CREATE_IF_MISSING},  # NOQA
                 mgr_kpconf['name'],
-                msg_id if is_neutron_supported_region else msgconf['name']
+                msg_id if is_neutron_supported_region else msgconf['name'],
+                compute_config['management_server']['creation_timeout']
             )
 
         if is_neutron_supported_region:
@@ -831,8 +899,7 @@ class CosmoOnOpenStackDriver(object):
         ips = self.server_controller.get_server_ips_in_network(server_id,
                                                                network_name)
         private_ip, public_ip = ips[:2]
-        ssh_key = mgr_kpconf['auto_generated']['private_key_target_path'] \
-            if 'auto_generated' in mgr_kpconf else None
+        ssh_key = expanduser(mgr_kpconf['private_key_path'])
         ssh_user = compute_config['management_server']['user_on_management']
         return public_ip, private_ip, ssh_key, ssh_user, self.provider_context
 
@@ -1156,11 +1223,9 @@ class BaseController(object):
             the_id = self.ensure_exists(name, *args, **kw)
             created = False
         else:
-            if CREATE_IF_MISSING in provider_config \
-                    and not provider_config[CREATE_IF_MISSING]:
-                raise OpenStackLogicError("{0} '{1}' is not configured to"
-                                          " create_if_missing but but does not"
-                                          " exist."
+            if not provider_config[CREATE_IF_MISSING]:
+                raise OpenStackLogicError("{0} '{1}' does not exist but "
+                                          "create_if_missing is false"
                                           .format(self.__class__.WHAT, name))
             the_id = self._create(name, *args, **kw)
             created = True
@@ -1492,22 +1557,18 @@ class OpenStackKeypairController(BaseControllerNova):
         return [{'id': keypair.id} for keypair in keypairs if
                 keypair.id == name]
 
-    def create(self, key_name, private_key_target_path=None,
-               public_key_filepath=None, *args, **kwargs):
-        if not private_key_target_path and not public_key_filepath:
-            raise RuntimeError("Must provide either private key target path "
-                               "or public key filepath to create keypair")
+    def create(self, key_name, private_key_path, *args, **kwargs):
+        pk_target_path = expanduser(private_key_path)
+        if os.path.exists(pk_target_path):
+            raise RuntimeError("Can't create keypair {0} - local path for "
+                               "private key already exists: {1}"
+                               .format(key_name, pk_target_path))
 
-        if public_key_filepath:
-            with open(expanduser(public_key_filepath), 'r') as f:
-                keypair = self.nova_client.keypairs.create(key_name, f.read())
-        else:
-            keypair = self.nova_client.keypairs.create(key_name)
-            pk_target_path = expanduser(private_key_target_path)
-            self._mkdir_p(os.path.dirname(private_key_target_path))
-            with open(pk_target_path, 'w') as f:
-                f.write(keypair.private_key)
-                os.system('chmod 600 {0}'.format(pk_target_path))
+        keypair = self.nova_client.keypairs.create(key_name)
+        self._mkdir_p(os.path.dirname(pk_target_path))
+        with open(pk_target_path, 'w') as f:
+            f.write(keypair.private_key)
+            os.system('chmod 600 {0}'.format(pk_target_path))
         return keypair.id
 
     def get_by_id(self, id):
@@ -1516,8 +1577,7 @@ class OpenStackKeypairController(BaseControllerNova):
     def _mkdir_p(self, path):
         path = expanduser(path)
         try:
-            lgr.debug('creating dir {0}'
-                      .format(path))
+            lgr.debug('creating dir {0}'.format(path))
             os.makedirs(path)
         except OSError, exc:
             if exc.errno == errno.EEXIST and os.path.isdir(path):
@@ -1538,11 +1598,12 @@ class OpenStackServerController(BaseControllerNova):
     WHAT = 'server'
 
     def list_objects_with_name(self, name):
-        servers = self.nova_client.servers.list(True, {'name': name})
+        name_re = '^' + re.escape(name) + '$'
+        servers = self.nova_client.servers.list(True, {'name': name_re})
         return [{'id': server.id} for server in servers]
 
     def create(self, name, server_config, management_server_keypair_name,
-               sgm_id, *args, **kwargs):
+               sgm_id, creation_timeout, *args, **kwargs):
         """
         Creates a server. Exposes the parameters mentioned in
         http://docs.openstack.org/developer/python-novaclient/api/novaclient
@@ -1591,7 +1652,8 @@ class OpenStackServerController(BaseControllerNova):
         params['key_name'] = management_server_keypair_name
 
         server = self.nova_client.servers.create(**params)
-        server = self._wait_for_server_to_become_active(server_name, server)
+        server = self._wait_for_server_to_become_active(server,
+                                                        creation_timeout)
         return server.id
 
     def add_floating_ip(self, server_id, ip):
@@ -1631,12 +1693,14 @@ class OpenStackServerController(BaseControllerNova):
                 " network {2}".format(server.name, server_id, network_name))
         return server.networks[network_name]
 
-    def _wait_for_server_to_become_active(self, server_name, server):
-        timeout = 300
+    def _wait_for_server_to_become_active(self, server, creation_timeout):
+        time_left = creation_timeout
         while server.status != "ACTIVE":
-            timeout -= 5
-            if timeout <= 0:
-                raise RuntimeError('Server failed to start in time')
+            time_left -= 5
+            if time_left <= 0:
+                raise RuntimeError('Server failed to start in time (creation '
+                                   'timeout was {} seconds)'
+                                   .format(creation_timeout))
             time.sleep(5)
             server = self.nova_client.servers.get(server.id)
 

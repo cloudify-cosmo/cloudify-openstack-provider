@@ -17,7 +17,7 @@ keystone:
     auth_url: Enter-Openstack-Auth-Url-Here
 
 
-# Network configuration
+# # Network configuration
 #######################
 #
 #networking:
@@ -52,7 +52,7 @@ keystone:
 #        name: cloudify-sg-management
 #        cidr: 0.0.0.0/0
 #
-#  Compute Configuration
+# # Compute Configuration
 ########################
 #compute:
 #    # The region where resources will be provisioned. Defaults to RegionOne.
@@ -64,6 +64,8 @@ keystone:
 #        user_on_management: ubuntu
 #        # Home directory of management user
 #        userhome_on_management: /home/ubuntu
+#        # Timeout (in seconds) for provisioning of the management machine.
+#        creation_timeout: 300
 #        # Details of the management machine
 #        instance:
 #            create_if_missing: true
@@ -77,40 +79,48 @@ keystone:
 #        management_keypair:
 #            create_if_missing: true
 #            name: cloudify-management-kp
-#            # Uncomment the below and set the file paths to use an existing key pair.
-#            #provided:
-#                #public_key_filepath: [PUBLIC-KEY-PATH]
-#                #private_key_filepath: [PRIVATE-KEY-PATH]
-#            auto_generated:
-#                # Local file path where generated private key will be saved
-#                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+#            # Local file path where existing key is stored or where generated private key will be saved
+#            private_key_path: ~/.ssh/cloudify-management-kp.pem
 #    # Agent configuration
 #    agent_servers:
 #        agents_keypair:
 #            create_if_missing: true
 #            name: cloudify-agents-kp
-#            #provided:
-#                #public_key_filepath: [PUBLIC-KEY-PATH]
-#                #private_key_filepath: [PRIVATE-KEY-PATH]
-#            auto_generated:
-#                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
+#            private_key_path: ~/.ssh/cloudify-agents-kp.pem
 #
-# Cloudify Installation Configuration
+# # Cloudify Installation Configuration
 ##################################
 # cloudify:
-#     server:
-#         packages:
-#             components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
-#             core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
-#             ui_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ui_amd64.deb
-#     agents:
-#         packages:
-#             ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/ubuntu-agent_amd64.deb
-#         config:
-#             min_workers: 2
-#             max_workers: 5
-#             remote_execution_port: 22
-#             # user: Enter-Default-Image-User-Here-(Optional)
-#     workflows:
-#         task_retries: -1  # -1 means we retry forever
-#         retry_interval: 30
+#    # You would probably want a prefix that ends with underscore or dash
+#    resources_prefix: your_name_here
+#
+#    server:
+#        packages:
+#            components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
+#            core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
+#            ui_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ui_amd64.deb
+#    agents:
+#        packages:
+#            ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/ubuntu-agent_amd64.deb
+#        config:
+#            min_workers: 2
+#            max_workers: 5
+#            remote_execution_port: 22
+#            # user: Enter-Default-Image-User-Here-(Optional)
+#    workflows:
+#        task_retries: -1  # -1 means we retry forever
+#        retry_interval: 30
+#    bootstrap:
+#        ssh:
+#            # number of retries for the initial connectivity check with the management server
+#            initial_connectivity_retries: 25
+#            # wait time (in seconds) in between the aforementioned retries
+#            initial_connectivity_retries_interval: 5
+#            # number of retries for bootstrap commands run via SSH
+#            command_retries: 3
+#            # wait time (in seconds) in between the aforementioned retries
+#            retries_interval: 3
+#            # number of SSH connection attempts (in a single retry)
+#            connection_attempts: 1
+#            # timeout (in seconds) for an SSH connection
+#            socket_timeout: 10
