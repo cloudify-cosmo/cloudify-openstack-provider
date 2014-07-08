@@ -915,8 +915,8 @@ class CosmoOnOpenStackDriver(object):
             all_conflicts[resource_name] = set(conflicts)
 
         def get_known_resource_id(resource_name):
-            return resources[resource_name]['id'] if resource_name in \
-                                                     resources else None
+            return resources[resource_name]['id'] if \
+                resource_name in resources else None
 
         check_for_conflicts('floating_ip', self.floating_ip_controller)
         check_for_conflicts('management_server', self.server_controller)
