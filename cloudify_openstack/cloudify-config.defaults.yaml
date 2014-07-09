@@ -54,13 +54,13 @@ compute:
 cloudify:
     server:
         packages:
-            components_package_url: {{ components_package_url }}
-            core_package_url: {{ core_package_url }}
-            ui_package_url: {{ ui_package_url }}
+            components_package_url: "{{ components_package_url }}"
+            core_package_url: "{{ core_package_url }}"
+            ui_package_url: "{{ ui_package_url }}"
     agents:
         packages:
-            ubuntu_agent_url: {{ ubuntu_agent_url }}
-            windows_agent_url: {{ windows_agent_url }}
+            ubuntu_agent_url: "{{ ubuntu_agent_url }}"
+            windows_agent_url: "{{ windows_agent_url }}"
         config:
             min_workers: 2
             max_workers: 5
