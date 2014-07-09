@@ -60,6 +60,7 @@ cloudify:
     agents:
         packages:
             ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ubuntu-agent_amd64.deb
+            windows_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-windows-agent_amd64.deb
         config:
             min_workers: 2
             max_workers: 5
