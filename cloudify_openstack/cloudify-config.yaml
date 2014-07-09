@@ -96,13 +96,13 @@ keystone:
 #
 #    server:
 #        packages:
-#            components_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-components_amd64.deb
-#            core_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-core_amd64.deb
-#            ui_package_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-ui_amd64.deb
+#            components_package_url: {{ components_package_url }}
+#            core_package_url: {{ core_package_url }}
+#            ui_package_url: {{ ui_package_url }}
 #    agents:
 #        packages:
-#            ubuntu_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/ubuntu-agent_amd64.deb
-#            windows_agent_url: http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/nightly/cloudify-windows-agent_amd64.deb
+#            ubuntu_agent_url: {{ ubuntu_agent_url }}
+#            windows_agent_url: {{ windows_agent_url }}
 #        config:
 #            min_workers: 2
 #            max_workers: 5
