@@ -2,11 +2,10 @@ keystone:
     username: Enter-Openstack-Username-Here
     password: Enter-Openstack-Password-Here
     tenant_name: Enter-Openstack-Tenant-Name-Here
-    auth_url: https://region-a.geo-1.identity.hpcloudsvc.com:35357/v2.0/
+    auth_url: Enter-Openstack-Auth-Url-Here
 
 networking:
     neutron_supported_region: true
-    neutron_url: https://region-b.geo-1.network.hpcloudsvc.com
     int_network:
         create_if_missing: true
         name: cloudify-admin-network
@@ -31,39 +30,55 @@ networking:
         cidr: 0.0.0.0/0
 
 compute:
-    region: region-b.geo-1
+    region: RegionOne
     management_server:
         #floating_ip: [FLOATING_IP] #uncomment and provide preallocated ip to disable auto-allocation of new IP on each run
         user_on_management: ubuntu
         userhome_on_management: /home/ubuntu
+        creation_timeout: 300
         instance:
             create_if_missing: true
             name: cloudify-management-server
-            image: 8c096c29-a666-4b82-99c4-c77dc70cfb40
+            image: [Image-ID]
             flavor: 102
         management_keypair:
             create_if_missing: true
             name: cloudify-management-kp
-            #provided:
-                #public_key_filepath: [PUBLIC-KEY-PATH]
-                #private_key_filepath: [PRIVATE-KEY-PATH]
-            auto_generated:
-                private_key_target_path: ~/.ssh/cloudify-management-kp.pem
+            private_key_path: ~/.ssh/cloudify-management-kp.pem
     agent_servers:
         agents_keypair:
             create_if_missing: true
             name: cloudify-agents-kp
-            #provided:
-                #public_key_filepath: [PUBLIC-KEY-PATH]
-                #private_key_filepath: [PRIVATE-KEY-PATH]
-            auto_generated:
-                private_key_target_path: ~/.ssh/cloudify-agents-kp.pem
+            private_key_path: ~/.ssh/cloudify-agents-kp.pem
 
 cloudify:
-    cloudify_components_package_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/cloudify-components_3.0.0-beta-b1_amd64.deb
-    cloudify_core_package_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/cloudify-core_3.0.0-beta-b1_amd64.deb
-    cloudify_ui_package_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/cloudify-ui_3.0.0-beta-b1_amd64.deb
-    cloudify_ubuntu_agent_url: http://repository.cloudifysource.org/org/cloudify3/3.0.0/nightly_1/ubuntu-agent_3.0.0-beta-b1_amd64.deb
+    server:
+        packages:
+            components_package_url: "http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.0.0/nightly_6/cloudify-components_3.0.0-ga-b6_amd64.deb"
+            core_package_url: "http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.0.0/nightly_6/cloudify-core_3.0.0-ga-b6_amd64.deb"
+            ui_package_url: "http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.0.0/nightly_6/cloudify-ui_3.0.0-ga-b6_amd64.deb"
+    agents:
+        packages:
+            ubuntu_agent_url: "http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.0.0/nightly_6/cloudify-ubuntu-agent_3.0.0-ga-b6_amd64.deb"
+            centos_agent_url: "http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.0.0/nightly_6/cloudify-centos-agent_3.0.0-ga-b6_amd64.deb"
+            windows_agent_url: "http://gigaspaces-repository-eu.s3.amazonaws.com/org/cloudify3/3.0.0/nightly_6/cloudify-windows-agent_3.0.0-ga-b6_amd64.deb"
+        config:
+            min_workers: 2
+            max_workers: 5
+            remote_execution_port: 22
+            #user: (no default - optional parameter)
+    workflows:
+        task_retries: -1  # -1 means we retry forever
+        retry_interval: 30
+
+    bootstrap:
+        ssh:
+            initial_connectivity_retries: 20
+            initial_connectivity_retries_interval: 15
+            command_retries: 3
+            retries_interval: 3
+            connection_attempts: 1
+            socket_timeout: 10
 
 #this section only applies to bootstrapping in --dev-mode
 dev:
