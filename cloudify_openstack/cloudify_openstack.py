@@ -112,7 +112,7 @@ class ProviderManager(BaseProviderClass):
     )
 
     CONFIG_FILES_PATHS_TO_MODIFY = (
-        ('compute', 'agent_servers', 'private_key_path'),
+        ('compute', 'agent_servers', 'agents_keypair', 'private_key_path'),
         ('compute', 'management_server', 'management_keypair',
             'private_key_path'),
     )
