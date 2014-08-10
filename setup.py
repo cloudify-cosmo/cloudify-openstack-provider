@@ -13,8 +13,6 @@
 #    * See the License for the specific language governing permissions and
 #    * limitations under the License.
 
-__author__ = 'ran'
-
 from setuptools import setup
 
 setup(
@@ -32,6 +30,6 @@ setup(
         'python-keystoneclient==0.7.1',
         'python-neutronclient==2.3.4',
         'IPy==0.81',
-        'cloudify-cli==3.1a1',
+        'cloudify==3.1a1',
     ]
 )
