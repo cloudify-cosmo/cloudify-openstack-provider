@@ -70,7 +70,8 @@ cloudify:
     workflows:
         task_retries: -1  # -1 means we retry forever
         retry_interval: 30
-
+    policy_engine:
+        start_timeout: 30
     bootstrap:
         ssh:
             initial_connectivity_retries: 20
