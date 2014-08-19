@@ -110,6 +110,16 @@ PROVIDER_CONFIG_SCHEMA = {
                     },
                     "additionalProperties": False
                 },
+                "policy_engine": {
+                    "type": "object",
+                    "required": ["start_timeout"],
+                    "properties": {
+                        "start_timeout": {
+                            "type": "number"
+                        },
+                    },
+                    "additionalProperties": False
+                },
                 "bootstrap": {
                     "type": "object",
                     "properties": {
