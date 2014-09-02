@@ -57,7 +57,7 @@ from cosmo_cli.provider_common import BaseProviderClass
 CREATE_IF_MISSING = 'create_if_missing'
 
 # declare which ports should be opened during provisioning
-EXTERNAL_MGMT_PORTS = (22, 8100, 80)  # SSH, REST service (TEMP), REST and UI
+EXTERNAL_MGMT_PORTS = (22, 80)  # SSH, REST service (TEMP), REST and UI
 INTERNAL_MGMT_PORTS = (5555, 5672, 53229)  # Riemann, RabbitMQ, FileServer
 INTERNAL_AGENT_PORTS = (22, 5985)
 
