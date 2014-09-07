@@ -41,6 +41,7 @@ from schemas import PROVIDER_CONFIG_SCHEMA
 import keystoneclient.v2_0.client as keystone_client
 import novaclient.v1_1.client as nova_client
 import neutronclient.neutron.client as neutron_client
+from neutronclient.common.exceptions import NeutronClientException
 
 # from CLI
 # provides a logger to be used throughout the provider code
@@ -1495,7 +1496,6 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
 
     def allocate_ip(self, external_network_id):
         if external_network_id:
-            lgr.debug("Allocating floating IP with neutron")
             floating_ip = self.neutron_client.create_floatingip(
                 {
                     "floatingip":
@@ -1504,10 +1504,7 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
                     }
                 })
         else:
-            lgr.debug("Allocating floating IP with nova-net")
             floating_ip = self.nova_client.floating_ips.create()
-            lgr.debug("Floating IP is")
-            lgr.debug(floating_ip)
 
         return floating_ip
 
@@ -1515,7 +1512,18 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
         if self.neutron_client:
             return self.neutron_client.show_floatingip(id)
         else:
-            return self.nova_client.floating_ips.get(id)
+            # This is a little silly.
+            # in nova-net, IDs of floating IPs are fixed
+            # so a query by ID will get the details back, even if the
+            # floating IP is not assigned.
+            fips = self.nova_client.floating_ips.list()
+            fips_matching = [fip for fip in fips if fip.id == 1]
+            if len(fips_matching) > 0:
+                return fips_matching[0]
+            else:
+                # raise an error so this behaves the same as the neutron client
+                raise NeutronClientException(message='Floating IP not found',
+                                             status_code=404)
 
     def check_for_delete_conflicts(self, floating_ip_id, **kwargs):
         return []
