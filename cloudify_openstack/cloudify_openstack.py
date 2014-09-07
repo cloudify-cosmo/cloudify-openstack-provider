@@ -295,12 +295,9 @@ class ProviderManager(BaseProviderClass):
             'networking.management_security_group.cidr',
             networking_config['management_security_group']['cidr'])
 
-
         if self.provider_config['networking']['neutron_supported_region']:
-            lgr.debug("VALIDATING NEUTRON")
             self.validate_neutron(networking_config, verifier)
         else:
-            lgr.debug("VALIDATING NOVA NET")
             self.validate_nova_net(networking_config, verifier)
 
         lgr.info('validating compute resources...')
@@ -499,7 +496,6 @@ class OpenStackValidator:
                 lgr.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('networking', []).append(err)
                 return False
-
 
     def validate_floating_ip_neutron(self, field, floating_ip):
         ips = self.neutron_client.list_floatingips()
@@ -1195,7 +1191,8 @@ class CosmoOnOpenStackDriver(object):
         else:
             floating_ip_obj = self.floating_ip_controller.allocate_ip(enet_id)
             if enet_id:
-                floating_ip = floating_ip_obj['floatingip']['floating_ip_address']
+                floating_ip = floating_ip_obj[
+                    'floatingip']['floating_ip_address']
                 floating_ip_id = floating_ip_obj['floatingip']['id']
             else:
                 floating_ip = floating_ip_obj.ip
@@ -1502,9 +1499,9 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
             floating_ip = self.neutron_client.create_floatingip(
                 {
                     "floatingip":
-                        {
-                            "floating_network_id": external_network_id,
-                            }
+                    {
+                        "floating_network_id": external_network_id,
+                    }
                 })
         else:
             lgr.debug("Allocating floating IP with nova-net")
@@ -1566,7 +1563,7 @@ class OpenStackRouterController(BaseControllerNeutron):
                                   floating_ip in
                                   self.neutron_client.list_floatingips()[
                                       'floatingips'] if floating_ip[
-                                      'router_id'] == router_id and
+                                          'router_id'] == router_id and
                                   floating_ip['id'] not in
                                   floating_ips_for_deletion]
         return floating_ips_conflicts
