@@ -209,6 +209,52 @@ class ProviderManager(BaseProviderClass):
         return super(ProviderManager, self).bootstrap(
             mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user, dev_mode)
 
+    def validate_neutron(self, networking_config, verifier):
+        lgr.info('validating networking resources...')
+        if 'neutron_url' in networking_config:
+            verifier.validate_url_accessible(
+                'networking.network_url',
+                networking_config['neutron_url'])
+        if 'router' in networking_config:
+            verifier.validate_neutron_resource(
+                'networking.router.name',
+                networking_config['router'],
+                resource_type='router',
+                method='list_routers')
+        verifier.validate_neutron_resource(
+            'networking.subnet.name',
+            networking_config['subnet'],
+            resource_type='subnet',
+            method='list_subnets')
+        verifier.validate_neutron_resource(
+            'networking.int_network.name',
+            networking_config['int_network'],
+            resource_type='network',
+            method='list_networks')
+        if 'agents_security_group' in networking_config:
+            verifier.validate_neutron_resource(
+                'networking.agents_security_group.name',
+                networking_config['agents_security_group'],
+                resource_type='security_group',
+                method='list_security_groups')
+        verifier.validate_neutron_resource(
+            'networking.management_security_group.name',
+            networking_config['management_security_group'],
+            resource_type='security_group',
+            method='list_security_groups')
+
+    def validate_nova_net(self, networking_config, verifier):
+        lgr.info('validating networking resources...')
+
+        if 'agents_security_group' in networking_config:
+            verifier.validate_nova_net_security_group(
+                'networking.agents_security_group.name',
+                networking_config['agents_security_group'])
+
+        verifier.validate_nova_net_security_group(
+            'networking.management_security_group.name',
+            networking_config['management_security_group'])
+
     def validate(self):
         """
         validations to be performed before provisioning and bootstrapping
@@ -249,38 +295,13 @@ class ProviderManager(BaseProviderClass):
             'networking.management_security_group.cidr',
             networking_config['management_security_group']['cidr'])
 
-        lgr.info('validating networking resources...')
-        if 'neutron_url' in networking_config:
-            verifier.validate_url_accessible(
-                'networking.network_url',
-                networking_config['neutron_url'])
-        if 'router' in networking_config:
-            verifier.validate_neutron_resource(
-                'networking.router.name',
-                networking_config['router'],
-                resource_type='router',
-                method='list_routers')
-        verifier.validate_neutron_resource(
-            'networking.subnet.name',
-            networking_config['subnet'],
-            resource_type='subnet',
-            method='list_subnets')
-        verifier.validate_neutron_resource(
-            'networking.int_network.name',
-            networking_config['int_network'],
-            resource_type='network',
-            method='list_networks')
-        if 'agents_security_group' in networking_config:
-            verifier.validate_neutron_resource(
-                'networking.agents_security_group.name',
-                networking_config['agents_security_group'],
-                resource_type='security_group',
-                method='list_security_groups')
-        verifier.validate_neutron_resource(
-            'networking.management_security_group.name',
-            networking_config['management_security_group'],
-            resource_type='security_group',
-            method='list_security_groups')
+
+        if self.provider_config['networking']['neutron_supported_region']:
+            lgr.debug("VALIDATING NEUTRON")
+            self.validate_neutron(networking_config, verifier)
+        else:
+            lgr.debug("VALIDATING NOVA NET")
+            self.validate_nova_net(networking_config, verifier)
 
         lgr.info('validating compute resources...')
         if 'floating_ip' in mgmt_server_config \
@@ -423,6 +444,64 @@ class OpenStackValidator:
         return quotas[resource]
 
     def validate_floating_ip(self, field, floating_ip):
+        if self.neutron_client:
+            self.validate_floating_ip_neutron(field, floating_ip)
+        else:
+            lgr.debug("Cannot validate floating IP - using nova net")
+
+    def validate_floating_ip_nova_net(self, field, floating_ip):
+        ips = self.nova_client.floating_ips.list()
+        lgr.debug("While validating nova net, ips is:")
+        lgr.debug(ips)
+        ips_amount = len(ips)
+
+        if floating_ip is not None:
+            lgr.debug('checking whether floating_ip {0} exists...'
+                      .format(floating_ip))
+            found_floating_ip = False
+            for ip in ips.ip:
+                if ip['floating_ip_address'] == floating_ip:
+                    lgr.debug('OK:'
+                              'floating_ip {0} is allocated'
+                              .format(floating_ip))
+                    found_floating_ip = True
+                    break
+            if not found_floating_ip:
+                err = ('config file validation error originating at key: {0}, '
+                       'floating_ip {1} is not allocated.'
+                       ' please provide an allocated address'
+                       ' or comment the floating_ip line in the config'
+                       ' and one will be allocated for you.'
+                       .format(field, floating_ip))
+                lgr.error('VALIDATION ERROR:' + err)
+                lgr.info('list of available floating ips:')
+                for ip in ips['floatingips']:
+                    lgr.info('    {0}'.format(ip['floating_ip_address']))
+                self.validation_errors.setdefault('networking', []).append(err)
+                return False
+            return True
+        else:
+            lgr.debug('checking whether quota allows allocation'
+                      ' of new floating ips')
+            ips_quota = self._get_neutron_quota('floatingip')
+            if ips_amount < ips_quota:
+                lgr.debug('OK:'
+                          'a new ip can be allocated.'
+                          ' provisioned ips: {0}, quota: {1}'
+                          .format(ips_amount, ips_quota))
+                return True
+            else:
+                err = ('config file validation error originating at key: {0}, '
+                       'a floating ip cannot be allocated due'
+                       ' to quota limitations.'
+                       ' privisioned ips: {1}, quota: {2}'
+                       .format(field, ips_amount, ips_quota))
+                lgr.error('VALIDATION ERROR:' + err)
+                self.validation_errors.setdefault('networking', []).append(err)
+                return False
+
+
+    def validate_floating_ip_neutron(self, field, floating_ip):
         ips = self.neutron_client.list_floatingips()
         ips_amount = len(ips['floatingips'])
         if floating_ip is not None:
@@ -469,6 +548,29 @@ class OpenStackValidator:
                 lgr.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('networking', []).append(err)
                 return False
+
+    def validate_nova_net_security_group(self, field, resource_config):
+        lgr.debug('checking whether security group {0} exists in nova-net...'
+                  .format(resource_config['name']))
+        secgroups = self.nova_client.security_groups.list()
+        sec_group_name = resource_config['name']
+        for secgroup in secgroups:
+            if secgroup.name == sec_group_name:
+                lgr.debug('OK:'
+                          'Security Group {0} found in pool'
+                          .format(sec_group_name))
+                return True
+
+        if not resource_config[CREATE_IF_MISSING]:
+            err = ('config file validation error originating at key: {0}, '
+                   '{1} {2} does not exist in the pool but is marked as'
+                   ' create_if_missing = False. please provide an existing'
+                   ' resource name or change create_if_missing = True'
+                   ' to automatically create a new resource.'
+                   .format(field, 'Security Group', sec_group_name))
+            lgr.error('VALIDATION ERROR:' + err)
+            self.validation_errors.setdefault('networking', []).append(err)
+            return False
 
     def validate_neutron_resource(self, field, resource_config, resource_type,
                                   method):
@@ -772,6 +874,7 @@ class CosmoOnOpenStackDriver(object):
 
         compute_config = self.config['compute']
         insconf = compute_config['management_server']['instance']
+        enet_id = None
 
         is_neutron_supported_region = \
             self.config['networking']['neutron_supported_region']
@@ -875,22 +978,26 @@ class CosmoOnOpenStackDriver(object):
 
         if is_neutron_supported_region:
             network_name = nconf['name']
-            if insconf[CREATE_IF_MISSING]:  # new server
-                self._attach_floating_ip(
-                    compute_config['management_server'], enet_id, server_id,
-                    resources)
-            else:  # existing server
-                ips = self.server_controller.get_server_ips_in_network(
-                    server_id, nconf['name'])
-                if len(ips) < 2:
-                    self._attach_floating_ip(
-                        compute_config['management_server'], enet_id,
-                        server_id, resources)
         else:
             network_name = 'private'
 
+        if insconf[CREATE_IF_MISSING]:  # new server
+            self._attach_floating_ip(
+                compute_config['management_server'], enet_id, server_id,
+                resources)
+        else:  # existing server
+            ips = self.server_controller.get_server_ips_in_network(
+                server_id, nconf['name'])
+            if len(ips) < 2:
+                self._attach_floating_ip(
+                    compute_config['management_server'], enet_id,
+                    server_id, resources)
+
         ips = self.server_controller.get_server_ips_in_network(server_id,
                                                                network_name)
+
+        lgr.debug("The IPS ARE:")
+        lgr.debug(ips)
         private_ip, public_ip = ips[:2]
         ssh_key = expanduser(mgr_kpconf['private_key_path'])
         ssh_user = compute_config['management_server']['user_on_management']
@@ -1087,8 +1194,12 @@ class CosmoOnOpenStackDriver(object):
             floating_ip_id = None
         else:
             floating_ip_obj = self.floating_ip_controller.allocate_ip(enet_id)
-            floating_ip = floating_ip_obj['floatingip']['floating_ip_address']
-            floating_ip_id = floating_ip_obj['floatingip']['id']
+            if enet_id:
+                floating_ip = floating_ip_obj['floatingip']['floating_ip_address']
+                floating_ip_id = floating_ip_obj['floatingip']['id']
+            else:
+                floating_ip = floating_ip_obj.ip
+                floating_ip_id = floating_ip_obj.id
 
         resources['floating_ip'] = {
             'id': str(floating_ip_id),
@@ -1270,6 +1381,7 @@ class BaseControllerNeutron(BaseController):
     def __init__(self, connector):
         BaseController.__init__(self)
         self.neutron_client = connector.get_neutron_client()
+        self.nova_client = connector.get_nova_client()
 
 
 class OpenStackNetworkController(BaseControllerNeutron):
@@ -1385,23 +1497,37 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
         raise RuntimeError('UNSUPPORTED OPERATION')
 
     def allocate_ip(self, external_network_id):
-        floating_ip = self.neutron_client.create_floatingip(
-            {
-                "floatingip":
+        if external_network_id:
+            lgr.debug("Allocating floating IP with neutron")
+            floating_ip = self.neutron_client.create_floatingip(
                 {
-                    "floating_network_id": external_network_id,
-                }
-            })
+                    "floatingip":
+                        {
+                            "floating_network_id": external_network_id,
+                            }
+                })
+        else:
+            lgr.debug("Allocating floating IP with nova-net")
+            floating_ip = self.nova_client.floating_ips.create()
+            lgr.debug("Floating IP is")
+            lgr.debug(floating_ip)
+
         return floating_ip
 
     def get_by_id(self, id):
-        return self.neutron_client.show_floatingip(id)
+        if self.neutron_client:
+            return self.neutron_client.show_floatingip(id)
+        else:
+            return self.nova_client.floating_ips.get(id)
 
     def check_for_delete_conflicts(self, floating_ip_id, **kwargs):
         return []
 
     def delete(self, floating_ip_id):
-        self.neutron_client.delete_floatingip(floating_ip_id)
+        if self.neutron_client:
+            self.neutron_client.delete_floatingip(floating_ip_id)
+        else:
+            self.nova_client.floating_ips.delete(floating_ip_id)
 
 
 class OpenStackRouterController(BaseControllerNeutron):
@@ -1493,6 +1619,17 @@ class OpenStackNovaSecurityGroupController(BaseControllerNova):
                     if sg['id'] == sg_id:
                         server_conflicts.append(('server', server.id))
         return server_conflicts
+
+    def add_rules(self, sg_id, rules):
+        for rule in rules:
+            self.nova_client.security_group_rules.create(
+                sg_id,
+                ip_protocol="tcp",
+                from_port=rule['port'],
+                to_port=rule['port'],
+                cidr=rule.get('cidr'),
+                group_id=rule.get('group_id')
+            )
 
     def delete(self, sg_id):
         self.nova_client.security_groups.delete(sg_id)
