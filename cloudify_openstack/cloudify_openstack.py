@@ -447,57 +447,6 @@ class OpenStackValidator:
         else:
             lgr.debug("Cannot validate floating IP - using nova net")
 
-    def validate_floating_ip_nova_net(self, field, floating_ip):
-        ips = self.nova_client.floating_ips.list()
-        lgr.debug("While validating nova net, ips is:")
-        lgr.debug(ips)
-        ips_amount = len(ips)
-
-        if floating_ip is not None:
-            lgr.debug('checking whether floating_ip {0} exists...'
-                      .format(floating_ip))
-            found_floating_ip = False
-            for ip in ips.ip:
-                if ip['floating_ip_address'] == floating_ip:
-                    lgr.debug('OK:'
-                              'floating_ip {0} is allocated'
-                              .format(floating_ip))
-                    found_floating_ip = True
-                    break
-            if not found_floating_ip:
-                err = ('config file validation error originating at key: {0}, '
-                       'floating_ip {1} is not allocated.'
-                       ' please provide an allocated address'
-                       ' or comment the floating_ip line in the config'
-                       ' and one will be allocated for you.'
-                       .format(field, floating_ip))
-                lgr.error('VALIDATION ERROR:' + err)
-                lgr.info('list of available floating ips:')
-                for ip in ips['floatingips']:
-                    lgr.info('    {0}'.format(ip['floating_ip_address']))
-                self.validation_errors.setdefault('networking', []).append(err)
-                return False
-            return True
-        else:
-            lgr.debug('checking whether quota allows allocation'
-                      ' of new floating ips')
-            ips_quota = self._get_neutron_quota('floatingip')
-            if ips_amount < ips_quota:
-                lgr.debug('OK:'
-                          'a new ip can be allocated.'
-                          ' provisioned ips: {0}, quota: {1}'
-                          .format(ips_amount, ips_quota))
-                return True
-            else:
-                err = ('config file validation error originating at key: {0}, '
-                       'a floating ip cannot be allocated due'
-                       ' to quota limitations.'
-                       ' privisioned ips: {1}, quota: {2}'
-                       .format(field, ips_amount, ips_quota))
-                lgr.error('VALIDATION ERROR:' + err)
-                self.validation_errors.setdefault('networking', []).append(err)
-                return False
-
     def validate_floating_ip_neutron(self, field, floating_ip):
         ips = self.neutron_client.list_floatingips()
         ips_amount = len(ips['floatingips'])
@@ -976,6 +925,7 @@ class CosmoOnOpenStackDriver(object):
         if is_neutron_supported_region:
             network_name = nconf['name']
         else:
+            # network names not used in nova-net
             network_name = 'private'
 
         if insconf[CREATE_IF_MISSING]:  # new server
@@ -993,8 +943,6 @@ class CosmoOnOpenStackDriver(object):
         ips = self.server_controller.get_server_ips_in_network(server_id,
                                                                network_name)
 
-        lgr.debug("The IPS ARE:")
-        lgr.debug(ips)
         private_ip, public_ip = ips[:2]
         ssh_key = expanduser(mgr_kpconf['private_key_path'])
         ssh_user = compute_config['management_server']['user_on_management']
