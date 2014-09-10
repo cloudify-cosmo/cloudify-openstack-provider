@@ -928,6 +928,8 @@ class CosmoOnOpenStackDriver(object):
             # network names not used in nova-net
             network_name = 'private'
 
+        resources["is_neutron_supported_region"] = is_neutron_supported_region
+
         if insconf[CREATE_IF_MISSING]:  # new server
             self._attach_floating_ip(
                 compute_config['management_server'], enet_id, server_id,
