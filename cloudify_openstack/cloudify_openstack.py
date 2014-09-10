@@ -1568,11 +1568,16 @@ class OpenStackNovaSecurityGroupController(BaseControllerNova):
         servers_for_deletion = kwargs.get('servers_for_deletion', {})
         servers = self.nova_client.servers.list()
         server_conflicts = []
+
+        actual_sg = self.nova_client.security_groups.get(sg_id)
+        sg_name = actual_sg.name
+
         for server in servers:
             if server.id not in servers_for_deletion:
                 for sg in server.security_groups:
-                    if sg['id'] == sg_id:
+                    if sg['name'] == sg_name:
                         server_conflicts.append(('server', server.id))
+
         return server_conflicts
 
     def add_rules(self, sg_id, rules):
