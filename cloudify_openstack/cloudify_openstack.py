@@ -199,12 +199,11 @@ class ProviderManager(BaseProviderClass):
                 driver.delete_topology()
             raise
 
-    def bootstrap(self, mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user,
-                  dev_mode=False):
+    def bootstrap(self, mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user):
         driver = self._get_driver(self.provider_config)
         driver.copy_files_to_manager(mgmt_ip, mgmt_ssh_key, mgmt_ssh_user)
         return super(ProviderManager, self).bootstrap(
-            mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user, dev_mode)
+            mgmt_ip, private_ip, mgmt_ssh_key, mgmt_ssh_user)
 
     def validate(self):
         """
