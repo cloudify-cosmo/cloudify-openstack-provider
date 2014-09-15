@@ -68,7 +68,6 @@ linuxd = ('Linux')
 wind = ('Windows')
 
 
-
 class ProviderManager(BaseProviderClass):
     """class for base methods name must be kept as is.
 
