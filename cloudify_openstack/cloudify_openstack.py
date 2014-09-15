@@ -46,12 +46,12 @@ import neutronclient.neutron.client as neutron_client
 # provides a logger to be used throughout the provider code
 # returns a tuple of a main (file+console logger) and a file
 # (file only) logger.
-from cosmo_cli.cosmo_cli import init_logger
+from cloudify_cli.logger import lgr
 # provides a way to set the global verbosity level
 # from cosmo_cli.cosmo_cli import set_global_verbosity_level
 # provides 2 base methods to be used.
 # if not imported, the bootstrap method must be implemented
-from cosmo_cli.provider_common import BaseProviderClass
+from cloudify_cli.provider_common import BaseProviderClass
 
 # declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
@@ -67,8 +67,6 @@ verbose_output = False
 linuxd = ('Linux')
 wind = ('Windows')
 
-# initialize logger
-lgr, flgr = init_logger()
 
 
 class ProviderManager(BaseProviderClass):
