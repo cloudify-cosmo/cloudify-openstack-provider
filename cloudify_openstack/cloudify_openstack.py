@@ -722,14 +722,9 @@ class CosmoOnOpenStackDriver(object):
 
             # TODO: handle failed copy operations
             put(agents_key_path, userhome_on_management + '/.ssh')
-            keystone_file_path = _make_keystone_file(tempdir,
-                                                     keystone_config)
-            put(keystone_file_path, userhome_on_management)
-            if networking['neutron_supported_region']:
-                neutron_file_path = _make_neutron_file(tempdir,
-                                                       networking)
-                put(neutron_file_path, userhome_on_management)
-
+            openstack_file_path = _make_openstack_config_file(
+                tempdir, keystone_config, networking)
+            put(openstack_file_path, userhome_on_management)
             shutil.rmtree(tempdir)
 
         def _make_json_file(tempdir, file_basename, data):
@@ -738,17 +733,12 @@ class CosmoOnOpenStackDriver(object):
                 json.dump(data, f)
             return file_path
 
-        def _make_keystone_file(tempdir, keystone_config):
-            # put default region in keystone_config file
+        def _make_openstack_config_file(tempdir, keystone_config, networking):
             config = {}
             config.update(keystone_config)
             config.update({'region': self.config['compute']['region']})
-            return _make_json_file(tempdir, 'keystone_config', config)
-
-        def _make_neutron_file(tempdir, networking):
-            return _make_json_file(tempdir, 'neutron_config', {
-                'url': networking['neutron_url']
-            })
+            config.update({'neutron_url': networking.get('neutron_url', '')})
+            return _make_json_file(tempdir, 'openstack_config', config)
 
         compute_config = self.config['compute']
         mgmt_server_config = compute_config['management_server']
@@ -905,7 +895,7 @@ class CosmoOnOpenStackDriver(object):
 
             resource_data = resources[resource_name]
             conflicts = {}
-            if resource_data['created']:
+            if not resource_data['external_resource']:
                 conflicts = controller.check_for_delete_conflicts(
                     resource_data['id'], **kwargs)
             all_conflicts[resource_name] = set(conflicts)
@@ -980,7 +970,8 @@ class CosmoOnOpenStackDriver(object):
         # conflicts.
 
         def was_resource_created(resource):
-            return resource in resources and resources[resource]['created']
+            return resource in resources and \
+                not resources[resource]['external_resource']
 
         if was_resource_created('management_security_group'):
             all_conflicts['management_security_group'].update(
@@ -1010,7 +1001,7 @@ class CosmoOnOpenStackDriver(object):
             if resource_name not in resources:
                 return
             resource_data = resources[resource_name]
-            if resource_data['created']:
+            if not resource_data['external_resource']:
                 result = controller.delete_resource(resource_data['id'])
                 if result is None:
                     failed_to_delete_resources.append(resource_data)
@@ -1090,7 +1081,7 @@ class CosmoOnOpenStackDriver(object):
             'id': str(floating_ip_id),
             'ip': str(floating_ip),
             'type': 'floating ip',
-            'created': 'floating_ip' not in mgmt_server_conf
+            'external_resource': 'floating_ip' in mgmt_server_conf
         }
 
         lgr.info('attaching IP {0} to the instance'.format(
@@ -1228,7 +1219,7 @@ class BaseController(object):
             'id': str(id),
             'type': self.__class__.WHAT,
             'name': name,
-            'created': created
+            'external_resource': not created
         }
 
     def find_by_name(self, name):
