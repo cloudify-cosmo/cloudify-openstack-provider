@@ -895,7 +895,7 @@ class CosmoOnOpenStackDriver(object):
 
             resource_data = resources[resource_name]
             conflicts = {}
-            if resource_data['created']:
+            if not resource_data['external_resource']:
                 conflicts = controller.check_for_delete_conflicts(
                     resource_data['id'], **kwargs)
             all_conflicts[resource_name] = set(conflicts)
@@ -970,7 +970,8 @@ class CosmoOnOpenStackDriver(object):
         # conflicts.
 
         def was_resource_created(resource):
-            return resource in resources and resources[resource]['created']
+            return resource in resources and \
+                not resources[resource]['external_resource']
 
         if was_resource_created('management_security_group'):
             all_conflicts['management_security_group'].update(
@@ -1000,7 +1001,7 @@ class CosmoOnOpenStackDriver(object):
             if resource_name not in resources:
                 return
             resource_data = resources[resource_name]
-            if resource_data['created']:
+            if not resource_data['external_resource']:
                 result = controller.delete_resource(resource_data['id'])
                 if result is None:
                     failed_to_delete_resources.append(resource_data)
@@ -1080,7 +1081,7 @@ class CosmoOnOpenStackDriver(object):
             'id': str(floating_ip_id),
             'ip': str(floating_ip),
             'type': 'floating ip',
-            'created': 'floating_ip' not in mgmt_server_conf
+            'external_resource': 'floating_ip' in mgmt_server_conf
         }
 
         lgr.info('attaching IP {0} to the instance'.format(
@@ -1218,7 +1219,7 @@ class BaseController(object):
             'id': str(id),
             'type': self.__class__.WHAT,
             'name': name,
-            'created': created
+            'external_resource': not created
         }
 
     def find_by_name(self, name):
