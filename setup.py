@@ -28,7 +28,7 @@ setup(
     install_requires=[
         'python-novaclient==2.17.0',
         'python-keystoneclient==0.7.1',
-        'python-neutronclient==2.3.4',
+        'python-neutronclient==2.3.9',
         'IPy==0.81',
         'cloudify==3.1rc1',
     ]
