@@ -5,7 +5,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#        http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,32 +26,28 @@ import time
 import urllib
 import json
 import shutil
+import tempfile
+import platform
+# OpenStack
+import keystoneclient.v2_0.client as keystone_client
+import novaclient.v1_1.client as nova_client
+import neutronclient.neutron.client as neutron_client
 from getpass import getuser
 from os.path import expanduser
 from fabric.api import put, env
 from fabric.context_managers import settings
-import tempfile
-import platform
 
 # Validator
 from IPy import IP
 from schemas import PROVIDER_CONFIG_SCHEMA
 
-# OpenStack
-import keystoneclient.v2_0.client as keystone_client
-import novaclient.v1_1.client as nova_client
-import neutronclient.neutron.client as neutron_client
 
-# from CLI
-# provides a logger to be used throughout the provider code
-# returns a tuple of a main (file+console logger) and a file
-# (file only) logger.
-from cloudify_cli.logger import lgr
 # provides a way to set the global verbosity level
 # from cosmo_cli.cosmo_cli import set_global_verbosity_level
 # provides 2 base methods to be used.
 # if not imported, the bootstrap method must be implemented
 from cloudify_cli.provider_common import BaseProviderClass
+from cloudify_cli.logger import get_logger
 
 # declare the create_if_missing flag
 CREATE_IF_MISSING = 'create_if_missing'
@@ -111,7 +107,7 @@ class ProviderManager(BaseProviderClass):
     CONFIG_FILES_PATHS_TO_MODIFY = (
         ('compute', 'agent_servers', 'agents_keypair', 'private_key_path'),
         ('compute', 'management_server', 'management_keypair',
-            'private_key_path'),
+         'private_key_path'),
     )
 
     def __init__(self, provider_config, is_verbose_output):
@@ -191,11 +187,12 @@ class ProviderManager(BaseProviderClass):
                 driver.create_topology()
             return public_ip, private_ip, ssh_key, ssh_user, provider_context
         except BaseException:
-            lgr.error('provisioning failed!')
+            self.logger.error('provisioning failed!')
             if self.keep_up_on_failure:
-                lgr.info('topology will remain up')
+                self.logger.info('topology will remain up')
             else:
-                lgr.info('tearing down topology due to provision failure')
+                self.logger.info('tearing down topology due '
+                                 'to provision failure')
                 driver.delete_topology()
             raise
 
@@ -245,7 +242,7 @@ class ProviderManager(BaseProviderClass):
             'networking.management_security_group.cidr',
             networking_config['management_security_group']['cidr'])
 
-        lgr.info('validating networking resources...')
+        self.logger.info('validating networking resources...')
         if 'neutron_url' in networking_config:
             verifier.validate_url_accessible(
                 'networking.network_url',
@@ -278,10 +275,11 @@ class ProviderManager(BaseProviderClass):
             resource_type='security_group',
             method='list_security_groups')
 
-        lgr.info('validating compute resources...')
+        self.logger.info('validating compute resources...')
         if 'floating_ip' in mgmt_server_config \
                 and verifier.validate_cidr_syntax(
-                    'compute.management_server.floating_ip',
+                    'compute.management_server'
+                    '.floating_ip',
                     mgmt_server_config['floating_ip']):
             verifier.validate_floating_ip(
                 'compute.management_server.floating_ip',
@@ -327,9 +325,9 @@ class ProviderManager(BaseProviderClass):
 
         # TODO: check cloudify package url accessiblity from
         # within the instance
-        # lgr.info('validating cloudify resources...')
+        # self.logger.info('validating cloudify resources...')
         # verifier.validate_url_accessible(
-        #     'cloudify.cloudify_components_package_url',
+        # 'cloudify.cloudify_components_package_url',
         #     cloudify_config['cloudify_components_package_url'])
         # verifier.validate_url_accessible(
         #     'cloudify.cloudify_package_url',
@@ -345,8 +343,8 @@ class ProviderManager(BaseProviderClass):
 
         validation_errors = verifier.validation_errors
 
-        lgr.error('resource validation failed!') if validation_errors \
-            else lgr.info('resources validated successfully')
+        self.logger.error('resource validation failed!') if validation_errors \
+            else self.logger.info('resources validated successfully')
         # print json.dumps(validation_errors, sort_keys=True,
         #                  indent=4, separators=(',', ': '))
         return validation_errors
@@ -407,11 +405,13 @@ class OpenStackValidator:
     we'll check if the element exists and if it doesn't, check if there's
     quota to create the element, and if there isn't, alert.
     """
+
     def __init__(self, nova_client, neutron_client, keystone_client):
         self.validation_errors = {}
         self.nova_client = nova_client
         self.neutron_client = neutron_client
         self.keystone_client = keystone_client
+        self.logger = get_logger()
 
     def _get_neutron_quota(self, resource):
         quotas = self.neutron_client.show_quota(
@@ -422,14 +422,14 @@ class OpenStackValidator:
         ips = self.neutron_client.list_floatingips()
         ips_amount = len(ips['floatingips'])
         if floating_ip is not None:
-            lgr.debug('checking whether floating_ip {0} exists...'
-                      .format(floating_ip))
+            self.logger.debug('checking whether floating_ip {0} exists...'
+                              .format(floating_ip))
             found_floating_ip = False
             for ip in ips['floatingips']:
                 if ip['floating_ip_address'] == floating_ip:
-                    lgr.debug('OK:'
-                              'floating_ip {0} is allocated'
-                              .format(floating_ip))
+                    self.logger.debug('OK:'
+                                      'floating_ip {0} is allocated'
+                                      .format(floating_ip))
                     found_floating_ip = True
                     break
             if not found_floating_ip:
@@ -439,22 +439,23 @@ class OpenStackValidator:
                        ' or comment the floating_ip line in the config'
                        ' and one will be allocated for you.'
                        .format(field, floating_ip))
-                lgr.error('VALIDATION ERROR:' + err)
-                lgr.info('list of available floating ips:')
+                self.logger.error('VALIDATION ERROR:' + err)
+                self.logger.info('list of available floating ips:')
                 for ip in ips['floatingips']:
-                    lgr.info('    {0}'.format(ip['floating_ip_address']))
+                    self.logger.info('    {0}'
+                                     .format(ip['floating_ip_address']))
                 self.validation_errors.setdefault('networking', []).append(err)
                 return False
             return True
         else:
-            lgr.debug('checking whether quota allows allocation'
-                      ' of new floating ips')
+            self.logger.debug('checking whether quota allows allocation'
+                              ' of new floating ips')
             ips_quota = self._get_neutron_quota('floatingip')
             if ips_amount < ips_quota:
-                lgr.debug('OK:'
-                          'a new ip can be allocated.'
-                          ' provisioned ips: {0}, quota: {1}'
-                          .format(ips_amount, ips_quota))
+                self.logger.debug('OK:'
+                                  'a new ip can be allocated.'
+                                  ' provisioned ips: {0}, quota: {1}'
+                                  .format(ips_amount, ips_quota))
                 return True
             else:
                 err = ('config file validation error originating at key: {0}, '
@@ -462,21 +463,22 @@ class OpenStackValidator:
                        ' to quota limitations.'
                        ' privisioned ips: {1}, quota: {2}'
                        .format(field, ips_amount, ips_quota))
-                lgr.error('VALIDATION ERROR:' + err)
+                self.logger.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('networking', []).append(err)
                 return False
 
     def validate_neutron_resource(self, field, resource_config, resource_type,
                                   method):
-        lgr.debug('checking whether {0} {1} exists...'
-                  .format(resource_type, resource_config['name']))
+        self.logger.debug('checking whether {0} {1} exists...'
+                          .format(resource_type, resource_config['name']))
         resource_dict = getattr(self.neutron_client, method)()
         resource_amount = len(resource_dict.values()[0])
         for resource in resource_dict.values()[0]:
             if resource['name'] == resource_config['name']:
-                lgr.debug('OK:'
-                          '{0} {1} found in pool'
-                          .format(resource_type, resource_config['name']))
+                self.logger.debug('OK:'
+                                  '{0} {1} found in pool'
+                                  .format(resource_type,
+                                          resource_config['name']))
                 return True
         if not resource_config[CREATE_IF_MISSING]:
             err = ('config file validation error originating at key: {0}, '
@@ -485,22 +487,24 @@ class OpenStackValidator:
                    ' resource name or change create_if_missing = True'
                    ' to automatically create a new resource.'
                    .format(field, resource_type, resource_config['name']))
-            lgr.error('VALIDATION ERROR:' + err)
-            lgr.info('list of available {0}s:'.format(resource_type))
+            self.logger.error('VALIDATION ERROR:' + err)
+            self.logger.info('list of available {0}s:'.format(resource_type))
             for type, all in resource_dict.iteritems():
                 for resource in all:
-                    lgr.info('    {0}'.format(resource['name']))
+                    self.logger.info('    {0}'.format(resource['name']))
             self.validation_errors.setdefault('networking', []).append(err)
             return False
         else:
             resource_quota = self._get_neutron_quota(resource_type)
             if resource_amount < resource_quota:
-                lgr.debug('OK:'
-                          '{0} {1} can be created.'
-                          ' provisioned {2}s: {3}, quota: {4}'
-                          .format(resource_type, resource_config['name'],
-                                  resource_type, resource_amount,
-                                  resource_quota))
+                self.logger.debug('OK:'
+                                  '{0} {1} can be created.'
+                                  ' provisioned {2}s: {3}, quota: {4}'
+                                  .format(resource_type,
+                                          resource_config['name'],
+                                          resource_type,
+                                          resource_amount,
+                                          resource_quota))
                 return True
             else:
                 err = ('config file validation error originating at key: {0}, '
@@ -510,64 +514,65 @@ class OpenStackValidator:
                        .format(field, resource_type, resource_config['name'],
                                resource_type, resource_amount,
                                resource_quota))
-                lgr.error('VALIDATION ERROR:' + err)
+                self.logger.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('networking', []).append(err)
                 return False
 
     def validate_cidr_syntax(self, field, cidr):
-        lgr.debug('checking whether {0} is a valid address range...'
-                  .format(cidr))
+        self.logger.debug('checking whether {0} is a valid address range...'
+                          .format(cidr))
         try:
             IP(cidr)
-            lgr.debug('OK:'
-                      '{0} is a valid address range.'.format(cidr))
+            self.logger.debug('OK:'
+                              '{0} is a valid address range.'.format(cidr))
             return True
         except ValueError as e:
             err = ('config file validation error originating at key: {0}, '
                    '{1}'.format(field, e.message))
-            lgr.error('VALIDATION ERROR:' + err)
+            self.logger.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('networking', []).append(err)
             return False
 
     def validate_image_exists(self, field, image):
         image = str(image)
-        lgr.debug('checking whether image {0} exists...'.format(image))
+        self.logger.debug('checking whether image {0} exists...'.format(image))
         images = self.nova_client.images.list()
         for i in images:
             if image in i.name or image in i.human_id or image in i.id:
-                lgr.debug('OK:'
-                          'image {0} exists'.format(image))
+                self.logger.debug('OK:'
+                                  'image {0} exists'.format(image))
                 return True
         err = ('config file validation error originating at key: {0}, '
                'image {1} does not exist'.format(field, image))
-        lgr.error('VALIDATION ERROR:' + err)
-        lgr.info('list of available images:')
+        self.logger.error('VALIDATION ERROR:' + err)
+        self.logger.info('list of available images:')
         for i in images:
-            lgr.info('    {0}'.format(i.name))
+            self.logger.info('    {0}'.format(i.name))
         self.validation_errors.setdefault('compute', []).append(err)
         return False
 
     def validate_flavor_exists(self, field, flavor):
         flavor = str(flavor)
-        lgr.debug('checking whether flavor {0} exists...'.format(flavor))
+        self.logger.debug('checking whether flavor {0} '
+                          'exists...'.format(flavor))
         flavors = self.nova_client.flavors.list()
         for f in flavors:
             if flavor in (f.name, f.human_id, f.id):
-                lgr.debug('OK:'
-                          'flavor {0} exists'.format(flavor))
+                self.logger.debug('OK:'
+                                  'flavor {0} exists'.format(flavor))
                 return True
         err = ('config file validation error originating at key: {0}, '
                'flavor {1} does not exist'.format(field, flavor))
-        lgr.error('VALIDATION ERROR:' + err)
-        lgr.info('list of available flavors:')
+        self.logger.error('VALIDATION ERROR:' + err)
+        self.logger.info('list of available flavors:')
         for f in flavors:
-            lgr.info('    {0:>10} - {1}'.format(f.id, f.name))
+            self.logger.info('    {0:>10} - {1}'.format(f.id, f.name))
         self.validation_errors.setdefault('compute', []).append(err)
         return False
 
     def check_key_exists_locally(self, key_path):
-        # lgr.debug('checking whether key {0} exists'
-        #           .format(key_path))
+        # self.logger.debug('checking whether key {0} exists'
+        # .format(key_path))
         key_path = expanduser(key_path)
         return os.path.isfile(key_path)
 
@@ -576,36 +581,39 @@ class OpenStackValidator:
         return len(filter(lambda kp: kp.id == key_name, keypairs)) > 0
 
     def validate_key_local_perms(self, field, key_path):
-        lgr.debug('checking whether key {0} has the right permissions'
-                  .format(key_path))
+        self.logger.debug('checking whether key {0} has the right permissions'
+                          .format(key_path))
         key_path = expanduser(key_path)
         if not os.access(key_path, os.R_OK | os.W_OK):
             err = ('config file validation error originating at key: {0}, '
-                   'ssh key {1} is not readable and/or writeable'.format(
-                       field, key_path))
-            lgr.error('VALIDATION ERROR:' + err)
+                   'ssh key {1} is not readable and/or writeable'
+                   .format(field, key_path))
+            self.logger.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('compute', []).append(err)
             return False
-        lgr.debug('OK:'
-                  'ssh key {0} has the correct permissions'.format(key_path))
+        self.logger.debug('OK:'
+                          'ssh key {0} has the correct permissions'
+                          .format(key_path))
         return True
 
     def validate_url_accessible(self, field, package_url):
-        lgr.debug('checking whether url {0} is accessible'.format(package_url))
+        self.logger.debug('checking whether url {0} is accessible'
+                          .format(package_url))
         status = urllib.urlopen(package_url).getcode()
         if not status == 200:
             err = ('config file validation error originating at key: {0}, '
                    'url {1} is not accessible'.format(field, package_url))
-            lgr.error('VALIDATION ERROR:' + err)
+            self.logger.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('cloudify', []).append(err)
             return False
-        lgr.debug('OK:'
-                  'url {0} is accessible'.format(package_url))
+        self.logger.debug('OK:'
+                          'url {0} is accessible'.format(package_url))
         return True
 
     def validate_path_owner(self, field, path):
-        lgr.debug('checking whether dir {0} is owned by the current user'
-                  .format(path))
+        self.logger.debug('checking whether dir {0} is '
+                          'owned by the current user'
+                          .format(path))
         from pwd import getpwnam, getpwuid
 
         path = expanduser(path)
@@ -619,11 +627,11 @@ class OpenStackValidator:
                    '{1} is not owned by the current user'
                    ' (it is owned by {2})'
                    .format(field, path, owner))
-            lgr.error('VALIDATION ERROR:' + err)
+            self.logger.error('VALIDATION ERROR:' + err)
             self.validation_errors.setdefault('compute', []).append(err)
             return False
-        lgr.debug('OK:'
-                  '{0} is owned by the current user'.format(path))
+        self.logger.debug('OK:'
+                          '{0} is owned by the current user'.format(path))
         return True
 
     def validate_keypair_configuration(self, keypair_config,
@@ -633,7 +641,7 @@ class OpenStackValidator:
         # 'create_if_missing' is set to True
 
         keypair_type = keypair_config_path.split('.')[-1]
-        lgr.debug('checking whether {0} configuration is valid'.format(
+        self.logger.debug('checking whether {0} configuration is valid'.format(
             keypair_type))
 
         does_key_exist_on_openstack = \
@@ -643,36 +651,36 @@ class OpenStackValidator:
 
         if does_key_exist_on_openstack:
             if not does_key_exist_locally:
-                err = 'config file validation error originating at key: {0}, '\
+                err = 'config file validation error originating at key: {0}, ' \
                       'keypair {1} exists on Openstack, but there is no ' \
-                      'private key file at {2}'\
-                      .format(keypair_config_path, keypair_config['name'],
-                              keypair_config['private_key_path'])
-                lgr.error('VALIDATION ERROR:' + err)
+                      'private key file at {2}' \
+                    .format(keypair_config_path, keypair_config['name'],
+                            keypair_config['private_key_path'])
+                self.logger.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('compute', []).append(err)
                 return False
         else:
             if keypair_config[CREATE_IF_MISSING] and does_key_exist_locally:
-                err = 'config file validation error originating at key: {0}, '\
+                err = 'config file validation error originating at key: {0}, ' \
                       "can't create keypair {1} because private key target " \
-                      "path {2} already exists"\
-                      .format(keypair_config_path, keypair_config['name'],
-                              keypair_config['private_key_path'])
-                lgr.error('VALIDATION ERROR:' + err)
+                      "path {2} already exists" \
+                    .format(keypair_config_path, keypair_config['name'],
+                            keypair_config['private_key_path'])
+                self.logger.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('compute', []).append(err)
                 return False
             elif not keypair_config[CREATE_IF_MISSING]:
-                err = 'config file validation error originating at key: {0}, '\
-                      'keypair {1} does not exist in the pool but is marked '\
-                      'as create_if_missing = False. please provide an '\
-                      'existing resource name or change create_if_missing = '\
-                      'True to automatically create a new resource.'\
-                      .format(keypair_config_path, keypair_config['name'])
-                lgr.error('VALIDATION ERROR:' + err)
+                err = 'config file validation error originating at key: {0}, ' \
+                      'keypair {1} does not exist in the pool but is marked ' \
+                      'as create_if_missing = False. please provide an ' \
+                      'existing resource name or change create_if_missing = ' \
+                      'True to automatically create a new resource.' \
+                    .format(keypair_config_path, keypair_config['name'])
+                self.logger.error('VALIDATION ERROR:' + err)
                 self.validation_errors.setdefault('compute', []).append(err)
                 return False
 
-        lgr.debug(
+        self.logger.debug(
             'OK: keypair {0} configuration is valid'.format(keypair_type))
         return True
 
@@ -681,6 +689,7 @@ class CosmoOnOpenStackDriver(object):
     """
     in change or provisioning and teardown of resources.
     """
+
     def __init__(self, provider_config, provider_context, network_controller,
                  subnet_controller, router_controller, sg_controller,
                  floating_ip_controller, keypair_controller,
@@ -694,6 +703,7 @@ class CosmoOnOpenStackDriver(object):
         self.floating_ip_controller = floating_ip_controller
         self.keypair_controller = keypair_controller
         self.server_controller = server_controller
+        self.logger = get_logger()
 
         global verbose_output
         self.verbose_output = verbose_output
@@ -717,7 +727,8 @@ class CosmoOnOpenStackDriver(object):
             env.status = False
             env.disable_known_hosts = False
 
-            lgr.info('uploading keystone and neutron and files to manager')
+            self.logger.info('uploading keystone and '
+                             'neutron and files to manager')
             tempdir = tempfile.mkdtemp()
 
             # TODO: handle failed copy operations
@@ -934,27 +945,27 @@ class CosmoOnOpenStackDriver(object):
 
         def format_conflict_print(conflicted_resource_name,
                                   conflicts):
-            return '\t{0}:\n'\
-                   '\t\t{1}'.format(
-                       _format_resource_name(
-                           resources[conflicted_resource_name]['name'] if
-                           'name' in resources[conflicted_resource_name] else
-                           resources[conflicted_resource_name]['ip'],
-                           resources[conflicted_resource_name]['type'],
-                           resources[conflicted_resource_name]['id']),
-                       '\t\t'.join(['{0}\n'.format(
-                           _format_resource_name(conflict_type,
-                                                 conflict_id)) for
-                                    conflict_type, conflict_id in conflicts]))
+            return '\t{0}:\n' \
+                   '\t\t{1}'\
+                .format(_format_resource_name(
+                    resources[conflicted_resource_name]['name'] if
+                    'name' in resources[conflicted_resource_name] else
+                    resources[conflicted_resource_name]['ip'],
+                    resources[conflicted_resource_name]['type'],
+                    resources[conflicted_resource_name]['id']),
+                    '\t\t'.join(['{0}\n'.format(
+                        _format_resource_name(conflict_type,
+                                              conflict_id)) for
+                                 conflict_type, conflict_id in conflicts]))
 
         formatted_conflict_lines_str = ''.join(
             [format_conflict_print(conflicted_resource_name, conflicts)
-             for conflicted_resource_name, conflicts in all_conflicts
-                .iteritems() if
-                len(all_conflicts[conflicted_resource_name]) > 0])
+             for conflicted_resource_name, conflicts
+             in all_conflicts.iteritems() if
+             len(all_conflicts[conflicted_resource_name]) > 0])
         if len(formatted_conflict_lines_str) > 0:
-            lgr.info('Conflicts detected:\n'
-                     '{0}'.format(formatted_conflict_lines_str))
+            self.logger.info('Conflicts detected:\n'
+                             '{0}'.format(formatted_conflict_lines_str))
             return True
         return False
 
@@ -970,8 +981,8 @@ class CosmoOnOpenStackDriver(object):
         # conflicts.
 
         def was_resource_created(resource):
-            return resource in resources and \
-                not resources[resource]['external_resource']
+            return resource in resources and not \
+                resources[resource]['external_resource']
 
         if was_resource_created('management_security_group'):
             all_conflicts['management_security_group'].update(
@@ -1010,7 +1021,7 @@ class CosmoOnOpenStackDriver(object):
                         deleted_resources.append(resource_data)
                     else:
                         not_found_resources.append(resource_data)
-                    del(resources[resource_name])
+                    del (resources[resource_name])
 
         # deleting in reversed order to creation order
         del_resource('floating_ip', self.floating_ip_controller)
@@ -1032,11 +1043,11 @@ class CosmoOnOpenStackDriver(object):
 
         has_conflicts = self._check_and_handle_delete_conflicts(resources)
         if has_conflicts and not ignore_validation:
-            lgr.info('Not going forward with teardown due to '
-                     'validation conflicts.')
+            self.logger.info('Not going forward with teardown due to '
+                             'validation conflicts.')
             return
 
-        deleted_resources, not_found_resources, failed_to_delete_resources =\
+        deleted_resources, not_found_resources, failed_to_delete_resources = \
             self._delete_resources(resources)
 
         def format_resources_data_for_print(resources_data):
@@ -1058,7 +1069,7 @@ class CosmoOnOpenStackDriver(object):
             .format(format_resources_data_for_print(
                 failed_to_delete_resources))
 
-        lgr.info(
+        self.logger.info(
             'Finished deleting topology;\n'
             '{0}{1}{2}'
             .format(
@@ -1084,7 +1095,7 @@ class CosmoOnOpenStackDriver(object):
             'external_resource': 'floating_ip' in mgmt_server_conf
         }
 
-        lgr.info('attaching IP {0} to the instance'.format(
+        self.logger.info('attaching IP {0} to the instance'.format(
             floating_ip))
         self.server_controller.add_floating_ip(server_id, floating_ip)
         return floating_ip
@@ -1095,21 +1106,23 @@ class OpenStackLogicError(RuntimeError):
 
 
 class BaseController(object):
+    def __init__(self):
+        self.logger = get_logger()
 
     def _create(self, name, **kw):
-        lgr.debug("Will create {0} '{1}'".format(
+        self.logger.debug("Will create {0} '{1}'".format(
             self.__class__.WHAT, name))
         return self.create(name, **kw)
 
     def _check_exists(self, name):
-        lgr.debug("Checking to see if {0} '{1}' already exists".format(
+        self.logger.debug("Checking to see if {0} '{1}' already exists".format(
             self.__class__.WHAT, name))
         res = self.find_by_name(name)
         if res:
-            lgr.debug("{0} '{1}' already exists".format(
+            self.logger.debug("{0} '{1}' already exists".format(
                 self.__class__.WHAT, name))
         else:
-            lgr.debug("{0} '{1}' does not exist".format(
+            self.logger.debug("{0} '{1}' does not exist".format(
                 self.__class__.WHAT, name))
         return res
 
@@ -1119,37 +1132,45 @@ class BaseController(object):
         # False if resource didn't exist,
         # None if failed to delete existing resource
         res_type = self.__class__.WHAT
-        lgr.debug("Attempting to delete resource {0}"
-                  .format(_format_resource_name(res_type, resource_id)))
+        self.logger.debug("Attempting to delete resource {0}"
+                          .format(_format_resource_name(res_type,
+                                                        resource_id)))
         for retry in range(retries):
             try:
                 self.delete(resource_id)
             except Exception as e:
                 # Checking if resource doesn't exist
                 if self._is_openstack_404_error(e):
-                    lgr.debug("resource {0} wasn't found".format(resource_id))
+                    self.logger.debug("resource {0} wasn't found"
+                                      .format(resource_id))
                     return False
 
                 # Different error occurred. Retry or give up.
-                lgr.debug("Error while attempting to delete resource "
-                          "{0} [retry {1} of {2}]: {3}".format(
-                              _format_resource_name(res_type, resource_id),
-                              retry, retries, str(e)))
+                self.logger.debug("Error while attempting to delete resource "
+                                  "{0} [retry {1} of {2}]: {3}"
+                                  .format(_format_resource_name(res_type,
+                                                                resource_id),
+                                          retry,
+                                          retries,
+                                          str(e)))
                 time.sleep(sleep)
                 continue
 
             try:
                 self._wait_for_resource_to_be_deleted(resource_id)
-                lgr.debug('resource {0} terminated'.format(resource_id))
+                self.logger.debug('resource {0} terminated'
+                                  .format(resource_id))
                 return True
             except Exception as e:
-                lgr.debug('Error while waiting for resource {0} '
-                          'to terminate: {1}'.format(
-                              _format_resource_name(res_type, resource_id),
-                              str(e)))
+                self.logger.debug('Error while waiting for resource {0} '
+                                  'to terminate: {1}'
+                                  .format(_format_resource_name(res_type,
+                                                                resource_id),
+                                          str(e)))
                 return None
-        lgr.debug('Failed all retries to delete resource {0}'
-                  .format(_format_resource_name(res_type, resource_id)))
+        self.logger.debug('Failed all retries to delete resource {0}'
+                          .format(_format_resource_name(res_type,
+                                                        resource_id)))
         return None
 
     def _wait_for_resource_to_be_deleted(self, resource_id):
@@ -1158,7 +1179,8 @@ class BaseController(object):
         while time.time() < deadline:
             try:
                 self.get_by_id(resource_id)
-                lgr.debug('resource {0} is still up'.format(resource_id))
+                self.logger.debug('resource {0} is still up'
+                                  .format(resource_id))
             except Exception as e:
                 if self._is_openstack_404_error(e):
                     return
@@ -1194,10 +1216,10 @@ class BaseController(object):
         if resource:
             if self.__class__.WHAT in ('server',):
                 raise OpenStackLogicError("{0} '{1}' already exists".format(
-                                          self.__class__.WHAT, name))
+                    self.__class__.WHAT, name))
 
-            lgr.debug("Will use existing {0} '{1}'"
-                      .format(self.__class__.WHAT, name))
+            self.logger.debug("Will use existing {0} '{1}'"
+                              .format(self.__class__.WHAT, name))
             the_id = resource['id']
             created = False
         else:
@@ -1294,13 +1316,13 @@ class OpenStackNetworkController(BaseControllerNeutron):
         # such servers, with no effect on the servers.
         # 3) On the other hand, while Openstack does allow for network
         # deletion without deleting its subnets beforehand, this in practice
-        #  also deletes the underlying subnets - and therefore we do have to
+        # also deletes the underlying subnets - and therefore we do have to
         #  check for subnet conflicts.
 
         subnets_for_deletion = kwargs.get('subnets_for_deletion', {})
         subnet_conflicts = [('subnet', subnet) for subnet in self.get_by_id(
-            network_id)['network']['subnets'] if subnet
-            not in subnets_for_deletion]
+            network_id)['network']['subnets'] if
+            subnet not in subnets_for_deletion]
         return subnet_conflicts
 
     def delete(self, network_id):
@@ -1341,11 +1363,11 @@ class OpenStackSubnetController(BaseControllerNeutron):
             # if it belongs to a server or a router (and not, for example,
             # a DHCP port), and if that device is up for deletion or not
             if 'device_owner' in port and \
-                len(port['fixed_ips']) > 0 and \
-                ((port['device_owner'] == 'network:router_interface' and
-                  port['device_id'] not in routers_for_deletion) or
-                 (port['device_owner'].startswith('compute') and
-                  port['device_id'] not in servers_for_deletion)):
+                    len(port['fixed_ips']) > 0 and \
+                    ((port['device_owner'] == 'network:router_interface' and
+                      port['device_id'] not in routers_for_deletion) or
+                     (port['device_owner'].startswith('compute') and
+                      port['device_id'] not in servers_for_deletion)):
                 for fixed_ip in port['fixed_ips']:
                     # should be only one, but iterating over it anyway.
                     if 'subnet_id' in fixed_ip and fixed_ip['subnet_id'] == \
@@ -1355,7 +1377,7 @@ class OpenStackSubnetController(BaseControllerNeutron):
                                                      port['device_id']))
                         else:
                             server_conflicts.append(('server',
-                                                    port['device_id']))
+                                                     port['device_id']))
         return server_conflicts + router_conflicts
 
     def delete(self, subnet_id):
@@ -1375,9 +1397,9 @@ class OpenStackFloatingIpController(BaseControllerNeutron):
         floating_ip = self.neutron_client.create_floatingip(
             {
                 "floatingip":
-                {
-                    "floating_network_id": external_network_id,
-                }
+                    {
+                        "floating_network_id": external_network_id,
+                    }
             })
         return floating_ip
 
@@ -1575,7 +1597,7 @@ class OpenStackKeypairController(BaseControllerNova):
     def _mkdir_p(self, path):
         path = expanduser(path)
         try:
-            lgr.debug('creating dir {0}'.format(path))
+            self.logger.debug('creating dir {0}'.format(path))
             os.makedirs(path)
         except OSError, exc:
             if exc.errno == errno.EEXIST and os.path.isdir(path):
@@ -1639,8 +1661,8 @@ class OpenStackServerController(BaseControllerNova):
                                "already exists"
                                .format(server_name))
 
-        lgr.debug("Asking Nova to create server. Parameters: {0}"
-                  .format(str(params)))
+        self.logger.debug("Asking Nova to create server. Parameters: {0}"
+                          .format(str(params)))
 
         configured_sgs = []
         if params['security_groups'] is not None:
@@ -1673,12 +1695,12 @@ class OpenStackServerController(BaseControllerNova):
                     "{1} instances".format(ip, len(ls)))
 
             if not ls[0].instance_id:
-                lgr.debug(
+                self.logger.debug(
                     "Floating IP {0} is not attached to any instance. "
                     "Continuing.".format(ip))
                 break
 
-            lgr.debug(
+            self.logger.debug(
                 "Floating IP {0} is attached "
                 "to instance {1}. Detaching.".format(ip, ls[0].instance_id))
             self.nova_client.servers.remove_floating_ip(ls[0].instance_id, ip)
