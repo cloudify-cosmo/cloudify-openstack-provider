@@ -1,8 +1,14 @@
-cloudify-openstack
-==================
+cloudify-openstack-provider
+===========================
+
+DEPRACATED IN CLOUDIFY 3.1!
+
+Beginning with Cloudify 3.1, bootstrapping a Cloudify Management Environment is done via a `manager blueprint`.
+please refer to [Manager Blueprints](http://getcloudify.org/guide/3.1/installation-bootstrapping.html#manager-blueprints) for more info.
+
 
 Cloudify 3.0 openstack CLI package
-This Python project contains the code and configurations needed to bootstrap the Cloudify management netwrok &amp; manager VM on Openstack 
+This Python project contains the code and configurations needed to bootstrap the Cloudify management netwrok &amp; manager VM on Openstack
 
 ##Requirements
 The python-dev package is required (as it is used to compile the Crypto library used by Paramiko):
