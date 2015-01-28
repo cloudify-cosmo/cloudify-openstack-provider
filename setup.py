@@ -17,7 +17,7 @@ from setuptools import setup
 
 setup(
     name='cloudify-openstack-provider',
-    version='1.2a3',
+    version='1.2a4',
     author='ran',
     author_email='ran@gigaspaces.com',
     packages=['cloudify_openstack'],
@@ -30,6 +30,6 @@ setup(
         'python-keystoneclient==0.7.1',
         'python-neutronclient==2.3.9',
         'IPy==0.81',
-        'cloudify==3.2a3',
+        'cloudify==3.2a4',
     ]
 )
